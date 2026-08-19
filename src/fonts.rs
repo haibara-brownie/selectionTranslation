@@ -1,12 +1,18 @@
-//! 字体设置。
+//! 字体设置的 GTK 落地。
 //!
-//! 分三档：拉丁字体、中文字体、后备字体。CSS 的 `font-family` 本来就是按顺序回退的 ——
-//! 拉丁字体通常没有汉字字形，遇到汉字自然落到第二档，再不行落到第三档。三档都留空
-//! 就完全不发 `font-family`，用系统默认。
+//! 分三档：拉丁字体、中文字体、后备字体。**不靠 `font-family` 的回退顺序分配** ——
+//! 回退规则是「第一个有该字形的字体就赢」，而 JetBrains Maple Mono 这类字体自带汉字，
+//! 排在第一档就会把「中文字体」那档整个架空。所以这里按字符脚本显式指定：文本区打
+//! `GtkTextTag`，界面上的 Label 挂 Pango 属性。理由与否掉的方案见
+//! `docs/adr/0001-按字符脚本分配字体.md`。
+//!
+//! 汉字区间表在 `seltrans_core::typography`，与 Tauri 版共用一张。
 
 use gtk::prelude::*;
 
 use crate::config::Config;
+/// 汉字、假名、谚文、全角标点这些该用「中文字体」那一档的字符
+use seltrans_core::typography::is_cjk;
 
 /// 列出系统已装的字体家族，按名字排序
 pub fn families() -> Vec<String> {
@@ -65,12 +71,6 @@ pub fn covers_cjk(family: &str) -> bool {
         .map(|a| a.eq_ignore_ascii_case(family))
         .unwrap_or(false)
 }
-
-/// 汉字、假名、谚文、全角标点这些该用「中文字体」那一档的字符。
-///
-/// 区间表在 `seltrans_core::typography` 里 —— 那边生成 web 版的 `unicode-range`，
-/// 这边驱动 Pango 属性，共用一张表才不会两边说不同的话。
-use seltrans_core::typography::is_cjk;
 
 /// 给缓冲区里的汉字范围打上「用中文字体」的标记。
 ///
