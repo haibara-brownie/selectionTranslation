@@ -314,6 +314,30 @@ popover .search {{
   border-radius: 8px;
 }}
 
+/* 弹层出现动画。GTK4 默认不给 popover 任何动画（GTK3 有，GTK4 去掉了），
+   所以这里自己写一段：轻微下移 + 缩放 + 淡入。 */
+@keyframes st-popover-in {{
+  from {{
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }}
+  to {{
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }}
+}}
+popover.background > contents {{
+  animation: st-popover-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}}
+/* 弹层里的条目依次淡入，鼠标扫过时更有层次 */
+popover listview > row {{
+  animation: st-row-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}}
+@keyframes st-row-in {{
+  from {{ opacity: 0; }}
+  to {{ opacity: 1; }}
+}}
+
 /* 顶部那个提示词下拉：主控件，给它实体感 */
 dropdown:not(.st-chip) > button {{
   background-color: {surface0};
@@ -380,6 +404,10 @@ fn provider() -> gtk::CssProvider {
             return existing.clone();
         }
         let prov = gtk::CssProvider::new();
+        // CSS 写错了默认是静默忽略的，接上来免得改坏了自己不知道
+        prov.connect_parsing_error(|_, section, error| {
+            crate::logging::warn(&format!("主题 CSS 解析出错 @ {section}: {error}"));
+        });
         if let Some(display) = gtk::gdk::Display::default() {
             // 用 USER 优先级，确保盖得住 libadwaita 自带的配色
             gtk::style_context_add_provider_for_display(

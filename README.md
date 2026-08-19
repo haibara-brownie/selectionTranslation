@@ -1,145 +1,104 @@
 # selectionTranslation
 
-niri / Wayland 下的全局划词翻译。选中任意界面里的文字，按一下快捷键，右上角浮出译文。
+niri / Wayland 下的全局划词翻译。**选中任意界面里的文字，按 `Mod+Shift+T`，右上角浮出译文。**
 
-- **任何界面都能用** —— 主选区取词为主，取不到时自动回退到模拟 Ctrl+C（读完会还原剪贴板）
-- **翻译风格可切** —— 内置通用、GitHub / 技术文档、科学杂志 / 论文、日常口语、术语解释、报错解读、中译英润色七种，可自由增删改
-- **模型随便换** —— 内置十家供应商预设，选中即自动填好 base_url；模型列表实时从 `/v1/models` 拉取，不写死在程序里
-- **托盘常驻** —— 系统托盘有图标，一眼看得出在不在跑；左键打开输入框，右键切风格 / 切供应商；可开机自启
-- **Catppuccin 配色** —— 四个风味（Latte / Frappé / Macchiato / Mocha），可跟随系统深浅色自动切换
-- **单文件二进制** —— Rust + GTK4/libadwaita，约 9 MB，运行时只依赖桌面本来就有的 gtk4 / libadwaita
+不想选中也行：点托盘图标打开输入框，手敲或粘贴。
 
-## 安装
+- 七种翻译风格随时切换（通用 / GitHub / 科学论文 / 口语 / 术语解释 / 报错解读 / 中译英）
+- 十家模型供应商预设，选中即自动填好 base_url，模型列表实时拉取
+- 常驻托盘，Catppuccin 配色，跟随系统深浅色
+- 单文件二进制约 9 MB，运行时只依赖桌面本来就有的 gtk4 / libadwaita
+
+---
+
+## 快速开始
 
 ```bash
+# 1. 装依赖（Arch）
+pac rust gtk4 libadwaita wl-clipboard ydotool
+systemctl --user enable --now ydotool
+
+# 2. 编译安装
 git clone https://github.com/haibara-brownie/selectionTranslation.git
 cd selectionTranslation
 ./install.sh
 ```
 
-`install.sh` 会做四件事：编译 release 版、装到 `~/.local/bin/seltrans`、装桌面项、把快捷键和窗口规则写进 niri（**改 `config.kdl` 前会先备份**）。
+`install.sh` 会编译、装二进制和图标、写 niri 快捷键与窗口规则（**改 `config.kdl` 前先备份**）、开机自启并拉起托盘。加 `--no-niri` 不碰 niri 配置，加 `--no-autostart` 不设自启，`--uninstall` 卸载。
 
-不想让它碰 niri 配置就加 `--no-niri`，卸载用 `--uninstall`。
+**3. 配一个模型**：按 `Mod+Alt+T` → 「供应商」页 → 点 **+** → 选预设（base_url 自动填好）→ 填 API key → 「拉取列表」挑模型 → 「测试连接」确认通了。
 
-### 依赖
+**4. 用起来**：选中任意文字，按 `Mod+Shift+T`。
 
-| 包 | 用途 | 必需 |
-|---|---|---|
-| `rust` | 编译 | 是（仅编译时） |
-| `gtk4`、`libadwaita` | 界面 | 是 |
-| `wl-clipboard` | 主选区取词 | 是 |
-| `ydotool` | 模拟 Ctrl+C 兜底取词 | 否，但强烈建议 |
+---
 
-ydotool 需要跑着守护进程：
+## 怎么用
 
-```bash
-systemctl --user enable --now ydotool
-```
+### 快捷键
 
-Arch 上一次装齐：`pac rust gtk4 libadwaita wl-clipboard ydotool`
-
-## 用法
-
-| 快捷键 | 作用 |
+| 按键 | 作用 |
 |---|---|
-| `Mod+Shift+T` | 翻译当前选中的文本 |
+| `Mod+Shift+T` | 翻译当前选中的文字 |
 | `Mod+Alt+T` | 打开配置界面 |
-| `Esc` | 关闭翻译弹窗 |
+| `Esc` | 收起弹窗 |
 | `Ctrl+Enter` / `F5` | 在弹窗里翻译（输入框里回车是换行） |
-| `Ctrl+Shift+C` | 在弹窗里复制译文 |
+| `Ctrl+Shift+C` | 复制译文 |
 
-弹窗分成「原文」和「译文」两张卡片。**原文那张是可编辑的**：取词取歪了能就地改，也可以什么都不选、直接打开这里手敲或粘贴，`Ctrl+Enter` 翻译。顶部的下拉框可以随时换翻译风格，底部可以换供应商和模型，**换完立刻用新设置重译同一段文字**。
+改键编辑 `~/.config/niri/selectiontranslation.kdl`。
 
-## 托盘
+### 弹窗
 
-`seltrans tray` 会常驻后台并在系统托盘显示图标（蓝紫双气泡，装着 A 和 文）。
+上下两张卡片：**原文**和**译文**。
 
-- **左键点图标** —— 打开弹窗并聚焦输入框（点图标这个动作本身通常就意味着当下没选中任何东西，所以不做"翻译选中文本"）
-- **中键点图标** —— 翻译当前选中的文本
-- **右键** —— 完整菜单：当前供应商/模型/风格、翻译选中文本、切换翻译风格、切换供应商、设置、查看日志、开机自启动、退出
-- 悬停有 tooltip 显示当前配置
+原文那张**是可以编辑的** —— 取词取歪了直接改，改完 `Ctrl+Enter` 重译；也可以什么都不选，打开它手敲或粘贴。右上角实时显示字数，取到空内容一眼就能看出来。
 
-常驻的好处不只是"看得见它在跑"：快捷键触发时是复用这个进程，省掉 GTK 冷启动，弹窗几乎是瞬间出来的。常驻模式下关闭弹窗（Esc 或标题栏叉）只是把窗口藏起来，进程和图标都还在。
+顶部下拉换翻译风格，底部换供应商和模型，**换完立刻用新设置重译同一段文字**，不用重新选词。
 
-走的是 StatusNotifierItem over D-Bus，和 FlClash / Cherry Studio / cc-switch 同一套协议，任何提供 `org.kde.StatusNotifierWatcher` 的面板都能显示（DMS 的 Quickshell、waybar、KDE 等）。
+### 托盘
 
-图标是**内嵌在二进制里再光栅化后通过 D-Bus 传给面板**的，不走图标主题查找 —— 因为面板通常在自己启动时就把图标主题缓存住了，之后新装的图标按名字找不到，只会显示个首字母兜底。
-
-## 配色
-
-设置界面「通用 → 外观 → 配色」，选项是 Catppuccin 官方的四个风味：
-
-| 选项 | 说明 |
+| 操作 | 作用 |
 |---|---|
-| 跟随系统 | 桌面浅色时用 Latte、深色时用 Mocha，系统切换会自动跟着换 |
-| Latte | 浅色 |
-| Frappé / Macchiato / Mocha | 三档深色，由浅到深 |
+| 左键点图标 | 打开弹窗并聚焦输入框 |
+| 中键点图标 | 翻译当前选中的文字 |
+| 右键 | 完整菜单：切风格、切供应商、设置、看日志、开关自启、退出 |
+| 悬停 | 显示当前供应商 / 模型 / 风格 / 目标语言 |
 
-色值直接取自 [catppuccin/palette](https://github.com/catppuccin/palette)，通过一个 GTK CssProvider 以 `STYLE_PROVIDER_PRIORITY_USER` 优先级注入，同时输出 libadwaita 1.6+ 的 CSS 变量和旧版 `@define-color`。改完立刻生效，不用重开窗口。
+常驻还有个实际好处：快捷键触发时是复用这个进程，省掉 GTK 冷启动，弹窗几乎瞬间出来。收起弹窗只是把窗口藏起来，进程和图标都还在。
 
-下拉弹层、列表行、按钮的悬停与聚焦都带 160ms 过渡，忙碌指示用 Revealer 淡入淡出。
+### 翻译风格
 
-写主题 CSS 时有个坑：**别用裸的 `.background` 选择器** —— GtkPopover 自己也带这个样式类，一刷就会在弹层外面露出一圈窗口底色的方块。要用 `window`。
+| 风格 | 适合什么 |
+|---|---|
+| 🌐 通用翻译 | 默认，忠实又自然，只输出译文 |
+| 💻 GitHub / 技术文档 | README、issue、commit message。代码、路径、命令、Markdown 结构原样保留 |
+| 🔬 科学杂志 / 论文 | 学术书面语，术语给「中文（English）」对照，保留 LaTeX / 单位 / 引用标记 |
+| 💬 日常口语 | 地道口语，保留语气和表情符号，俚语转成对应说法 |
+| 📖 术语解释 | 先给译文，再补一段这个词是什么、用在哪、容易混淆在哪 |
+| 🐞 报错 / 代码解读 | 讲清报错含义 + 常见原因 + 建议排查 |
+| ✍️ 中译英润色 | 译成地道英文并润色 |
 
-### 开机自启动
+七条都能改，改坏了点「恢复内置提示词」就回来。也可以自己加。
 
-设置界面「通用」页有开关，托盘右键菜单里也有；命令行是：
-
-```bash
-seltrans autostart on
-seltrans autostart off
-seltrans autostart        # 查看当前状态
-```
-
-实际是往 `~/.config/autostart/` 写一个 desktop 文件 —— 和 FlClash / Cherry Studio / cc-switch 用的是同一套机制（systemd 的 `xdg-desktop-autostart.target` 在图形会话起来后拉起），不需要动 niri 配置。
-
-重复启动是安全的：`seltrans tray` 发现已经有常驻进程就直接退出，不会在登录时凭空弹出翻译窗口。
-
-命令行：
+### 命令行
 
 ```bash
 seltrans popup                     # 取词并弹窗（快捷键调用的就是这个）
+seltrans popup --input             # 打开输入框，不取词
 seltrans settings [页面]           # 配置界面，页面可选 general/providers/prompts/about
-seltrans translate --text "hello"  # 在终端里翻译，不开窗口
+seltrans tray                      # 常驻托盘（开机自启跑的就是这个）
+seltrans translate --text "hello"  # 终端里翻译，不开窗口
 echo "hello" | seltrans translate  # 也吃管道
+seltrans autostart on|off          # 开关开机自启
 seltrans log -f                    # 跟踪运行日志
 ```
 
-## 日志
-
-niri 用 `spawn` 启动程序时 stderr 会进 niri 自己的日志，所以关键节点都落到自己的文件里：
-
-```
-~/.local/state/seltrans/seltrans.log
-```
-
-超过 1 MB 自动轮转成 `seltrans.log.1`。设 `SELTRANS_DEBUG=1` 可以同时打到 stderr。
-
-翻译结果不对时先看这一行：
-
-```
-21:15:56 [INFO] 发起翻译 | 供应商=DeepSeek kind=openai 模型=deepseek-v4-flash
-  端点=https://api.deepseek.com/v1/chat/completions | system=315 字符 | user=53 字符
-  | user 预览: The build failed because the lockfile is out of date.
-```
-
-`user 字符数` 和 `user 预览` 就是**真正发给模型的内容**。如果模型回你"请提供需要翻译的内容"，看这里立刻就知道是取词取空了还是别的问题。预览里会把肉眼看不见的字符标出来（`<ZWSP>`、`<BOM>`、`<NBSP>` 等）——网页上选到空行、图标字体时经常拿到一串零宽字符，看着像有内容其实什么都没有。这种情况程序会直接拦下不发请求。
-
-日志**不记录 API key**。
+---
 
 ## 配置
 
-首次使用：`Mod+Alt+T` → 「供应商」页 → 点 **+** → 选一个预设（base_url 自动填好）→ 填 API key → 点「拉取列表」挑模型 → 点「测试连接」确认通了。
-
 配置存在 `~/.config/seltrans/config.json`，权限 `0600`（里面有 API key）。
 
-### 目标语言
-
-在「通用」页的下拉里选，内置 21 种主流大模型翻译质量都比较可靠的语种（简繁中英日韩、法德西葡意、俄乌荷波瑞土、阿拉伯、印地、泰、越、印尼）。选最后一项「自定义…」会露出输入框，可以填任何模型看得懂的语言名。
-
-存的是**语言名本身**而不是 ISO 代码 —— 它会直接替换掉提示词里的 `{target_lang}`，写「简体中文」比写 `zh-Hans` 稳定得多。
-
-### 内置供应商预设
+### 供应商与模型
 
 | 预设 | 接口 | base_url |
 |---|---|---|
@@ -154,15 +113,33 @@ niri 用 `spawn` 启动程序时 stderr 会进 niri 自己的日志，所以关�
 | Ollama（本地） | OpenAI 兼容 | `http://localhost:11434/v1` |
 | 自定义 | OpenAI 兼容 | 自己填 |
 
-**模型名不写死在程序里** —— 各家迭代太快（`deepseek-chat` 已在 2026-07-24 停用、`moonshot-v1` 系列 2026-08-31 退役），所以一律点「拉取列表」实时获取。划词翻译重延迟和成本，建议挑各家的快档而不是旗舰：旗舰里有几个（如 `kimi-k3`、`qwen3.8-max`）默认强制开启思考，会又慢又贵。
+**模型名不写死在程序里**，一律点「拉取列表」从 `/v1/models` 实时取 —— 各家迭代太快，写死很快就失效（`deepseek-chat` 已在 2026-07-24 停用，`moonshot-v1` 系列 2026-08-31 退役）。
 
-### 提示词
+> 划词翻译重延迟和成本，**建议挑各家的快档而不是旗舰**。有些旗舰（如 `kimi-k3`、`qwen3.8-max`）默认强制开启思考，会又慢又贵。
 
-每条提示词就是一段 system prompt，里面写 `{target_lang}` 会被替换成设置里的目标语言。内置七条可以随意改，改坏了点「恢复内置提示词」就回来了。
+可以配多个供应商，在弹窗底部或托盘菜单里一键切换。
+
+### 目标语言
+
+「通用」页的下拉，内置 21 种主流大模型翻译质量都比较可靠的语种。选「自定义…」可以填任何模型看得懂的语言名。
+
+存的是**语言名本身**而不是 ISO 代码 —— 它会直接替换提示词里的 `{target_lang}`，写「简体中文」比写 `zh-Hans` 稳定得多。
+
+### 配色
+
+「通用 → 外观 → 配色」，用的是 [Catppuccin](https://github.com/catppuccin/palette) 官方四个风味：
+
+| 选项 | |
+|---|---|
+| 跟随系统 | 浅色用 Latte、深色用 Mocha，系统切换自动跟着换 |
+| Latte | 浅色 |
+| Frappé / Macchiato / Mocha | 三档深色，由浅到深 |
+
+改完立刻生效，不用重开窗口。
 
 ### 附加请求体
 
-供应商配置里的「附加请求体」是一段 JSON 对象，会合并进请求体，用来塞各家特有的参数，例如：
+供应商配置里的「附加请求体」是一段 JSON，会合并进请求体，用来塞各家特有的参数：
 
 ```json
 {"reasoning_effort": "none"}
@@ -170,50 +147,105 @@ niri 用 `spawn` 启动程序时 stderr 会进 niri 自己的日志，所以关�
 
 程序**默认不发送 `temperature`** —— Claude 当前世代模型收到它会直接 400，部分推理模型也一样。需要的话在这里自己加。
 
-## 取词原理
+---
 
-Wayland 没有 X11 那样的全局取词 API，所以分两条路：
+## 排查
+
+配置界面「关于」页有依赖自检，会告诉你 wl-clipboard、ydotool 服务、niri 规则各自的状态。
+
+| 症状 | 怎么办 |
+|---|---|
+| 模型回「请提供需要翻译的内容」 | 发出去的用户消息是空的。先看弹窗里「原文」卡片的字数，再看日志里「发起翻译」那行的 `user 字符数`。多半是取到了空行或一串零宽字符 |
+| 取不到词 | 确认按快捷键前文字确实选中着；某些 Electron / Java 应用不提供主选区，把取词方式改成「自动」或「仅模拟 Ctrl+C」 |
+| 模拟 Ctrl+C 无效 | `systemctl --user status ydotool` 看服务在不在 |
+| 键盘像卡住了 | 修饰键被卡在按下状态，执行 `ydotool key 29:0 97:0 42:0 54:0 56:0 100:0 125:0 126:0` |
+| 快捷键没反应 | `niri validate` 看配置过没过；确认 `~/.local/bin` 在 PATH 里 |
+| 托盘没图标 | `seltrans tray` 手动跑一下看报什么；面板需要提供 `org.kde.StatusNotifierWatcher` |
+| HTTP 401 / 404 | 弹窗里会直接显示服务端返回的原文，多半是 key 错了或 base_url 少了 `/v1` |
+
+### 日志
+
+```
+~/.local/state/seltrans/seltrans.log
+```
+
+超 1 MB 自动轮转。`seltrans log -f` 跟踪，`SELTRANS_DEBUG=1` 可同时打到 stderr。**日志不记录 API key。**
+
+翻译结果不对时先看这一行：
+
+```
+[INFO] 发起翻译 | 供应商=DeepSeek 模型=deepseek-v4-flash | system=315 字符 | user=53 字符
+       | user 预览: The build failed because the lockfile is out of date.
+```
+
+`user 字符数` 和 `user 预览` 就是**真正发给模型的内容**。预览里会把肉眼看不见的字符标出来（`<ZWSP>`、`<BOM>`、`<NBSP>`）—— 网页上选到空行、图标字体时经常拿到一串零宽字符，看着像有内容其实什么都没有。这种情况程序会直接拦下不发请求。
+
+---
+
+## 原理与取舍
+
+<details>
+<summary>Wayland 下怎么取词</summary>
+
+没有 X11 那样的全局取词 API，所以分两条路：
 
 1. **主选区**（`wl-paste --primary`）—— 选中就生效，零侵入，不碰剪贴板。绝大多数 GTK / Qt / 终端应用都支持。
-2. **模拟 Ctrl+C**（ydotool）—— 主选区拿不到时的兜底。会先存下当前剪贴板内容，复制、读取，然后**还原回去**。
+2. **模拟 Ctrl+C**（ydotool）—— 主选区拿不到时的兜底。会先存下当前剪贴板，复制、读取，然后**还原回去**。
 
-第 2 条路有个必须处理的坑：快捷键是 `Mod+Shift+T`，程序跑起来那一刻你**手还按着 Super+Shift**，这时直接发 Ctrl+C，应用收到的其实是 `Super+Shift+Ctrl+C` —— 既复制不到东西，还可能让合成器的修饰键状态和物理按键脱节，表现就是**键盘像卡住了一样没法操作**。所以发 Ctrl+C 之前会先把左右 Ctrl / Shift / Alt / Super 全部显式抬起并等 120 ms，且用 RAII 守卫保证无论中途提前返回、panic 还是出错，退出时一定会再抬一次。
+第 2 条有个坑：快捷键是 `Mod+Shift+T`，程序跑起来那一刻你手还按着 Super+Shift，这时直接发 Ctrl+C，应用收到的是 `Super+Shift+Ctrl+C` —— 既复制不到，还可能让合成器的修饰键状态和物理按键脱节，**表现就是键盘像卡住了**。所以发 Ctrl+C 前会先把左右 Ctrl / Shift / Alt / Super 全部显式抬起并等 120 ms，且用 RAII 守卫保证提前返回 / panic / 出错时一定再抬一次。
 
-取词方式在设置里可以锁死成其中一种。默认「自动」，即先试主选区，失败再兜底。
+取词方式可以在设置里锁死成其中一种，默认「自动」。
+</details>
 
-弹窗固定在屏幕右上角，不跟随鼠标 —— Wayland 下拿不到全局光标坐标，这是没法绕开的取舍。位置和尺寸可以改 `~/.config/niri/selectiontranslation.kdl` 里的窗口规则。
+<details>
+<summary>为什么弹窗不跟随鼠标</summary>
 
-## 项目结构
+Wayland 下拿不到全局光标坐标，这是没法绕开的。弹窗固定在屏幕右上角，位置和尺寸可以改 `~/.config/niri/selectiontranslation.kdl` 里的窗口规则。
+</details>
+
+<details>
+<summary>托盘图标为什么内嵌在二进制里</summary>
+
+走的是 StatusNotifierItem over D-Bus，和 FlClash / Cherry Studio / cc-switch 同一套协议，任何提供 `org.kde.StatusNotifierWatcher` 的面板都能显示。
+
+图标是**内嵌进二进制、启动时光栅化成 ARGB32 再经 D-Bus 递给面板**的，不走图标主题查找 —— 面板通常在自己启动时就把图标主题缓存住了，之后新装的图标按名字找不到，只会显示个首字母兜底（实测就是这样）。
+</details>
+
+<details>
+<summary>写主题 CSS 踩过的坑</summary>
+
+**别用裸的 `.background` 选择器** —— GtkPopover 自己也带这个样式类，一刷就会在弹层外面露出一圈窗口底色的方块。要用 `window`。
+
+GTK4 的 popover **默认没有任何出现动画**（GTK3 有，GTK4 去掉了），得自己写 `@keyframes`。
+
+CssProvider 默认静默忽略解析错误，接上 `parsing-error` 信号写进日志，才不会改坏了自己不知道。
+</details>
+
+---
+
+## 开发
 
 ```
 src/
 ├── main.rs         CLI 分发：popup / tray / settings / translate / log / autostart
-├── config.rs       ~/.config/seltrans/config.json 读写（原子写 + 0600）
+├── config.rs       配置读写（原子写 + 0600）
 ├── logging.rs      日志、文本预览、零宽字符判空
-├── presets.rs      供应商预设目录 + 目标语言列表 + 七条内置提示词
+├── presets.rs      供应商预设 + 目标语言列表 + 七条内置提示词
 ├── selection.rs    取词：主选区 / 模拟 Ctrl+C / 修饰键守卫 / 依赖自检
 ├── llm.rs          OpenAI 兼容与 Anthropic 两套流式后端
 ├── theme.rs        Catppuccin 四风味配色 + 明暗切换
-├── tray.rs         StatusNotifierItem 托盘：菜单、内嵌图标光栅化
+├── tray.rs         StatusNotifierItem 托盘
 ├── autostart.rs    ~/.config/autostart 里的 desktop 文件读写
 ├── popup.rs        翻译弹窗 + 常驻模式 + 托盘命令派发
 └── settings_ui.rs  配置界面
-data/
-├── niri-snippet.kdl                        快捷键与窗口规则
-├── xyz.brownie.SelectionTranslation.svg     图标：双气泡，Catppuccin 蓝 + 紫（也编进二进制供托盘使用）
-└── xyz.brownie.SelectionTranslation.desktop 桌面项
 ```
 
-## 排查
+```bash
+cargo build --release        # 编译
+cargo clippy --all-targets   # 静态检查
+```
 
-界面「关于」页有依赖自检，会告诉你 wl-clipboard、ydotool 服务、niri 规则各自的状态。
-
-- **模型回"请提供需要翻译的内容"** —— 说明发出去的用户消息是空的。弹窗里的「原文」默认展开且带字数，先看那里；再看日志里「发起翻译」那行的 `user 字符数`。多半是取词取到了空行或一串零宽字符
-- **取不到词** —— 先确认按快捷键前文字确实选中着；某些 Electron / Java 应用不提供主选区，把取词方式改成「自动」或「仅模拟 Ctrl+C」
-- **模拟 Ctrl+C 无效** —— `systemctl --user status ydotool` 看服务在不在
-- **键盘像卡住了** —— 修饰键被卡在按下状态。手动解除：`ydotool key 29:0 97:0 42:0 54:0 56:0 100:0 125:0 126:0`
-- **快捷键没反应** —— `niri validate` 看配置有没有过；确认 `~/.local/bin` 在 PATH 里
-- **报 HTTP 401 / 404** —— 弹窗里会直接显示服务端返回的原文，多半是 key 错了或 base_url 少了 `/v1`
+技术栈：Rust 2024 + GTK4 / libadwaita（`gtk4` 0.11、`libadwaita` 0.9）、tokio、reqwest（rustls）、ksni（托盘）。无数据库，配置落 XDG 目录。
 
 ## 许可
 
