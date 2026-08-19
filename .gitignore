@@ -11,6 +11,11 @@ venv/
 .vscode/
 /target
 
+# 前端
+/node_modules/
+/dist/
+/src-tauri/gen/
+
 # AUR 打包产物
 packaging/aur/src/
 packaging/aur/pkg/

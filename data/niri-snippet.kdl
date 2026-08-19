@@ -26,3 +26,16 @@ window-rule {
     default-column-width { fixed 900; }
     default-window-height { fixed 700; }
 }
+
+// ---- Tauri 版（迁移中，与上面的 GTK 版并存）----
+//
+// Tauri 只有一个 app-id（配置里的 identifier，需开 app.enableGtkAppId，
+// 否则 tao 会拿二进制名当 app-id），弹窗和设置页共用，所以靠标题区分。
+// 不开那个开关的话窗口会被当成普通窗口平铺，弹不出来。
+window-rule {
+    match app-id=r#"^xyz\.brownie\.SelectionTranslation$"# title="^划词翻译$"
+    open-floating true
+    default-column-width { fixed 560; }
+    default-window-height { fixed 480; }
+    default-floating-position x=16 y=16 relative-to="top-right"
+}

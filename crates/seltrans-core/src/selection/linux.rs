@@ -17,6 +17,21 @@ use std::time::{Duration, Instant};
 
 use crate::logging;
 
+/// install.sh 会把 niri 的快捷键和窗口规则写到这里。
+///
+/// Wayland 下应用自己注册不了全局快捷键（协议层就没有），只能由合成器 spawn 我们，
+/// 所以这个文件在不在，直接决定划词翻译能不能用 —— 「关于」页会自检它。
+pub fn niri_snippet_path() -> std::path::PathBuf {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_else(|| "/tmp".into()))
+                .join(".config")
+        });
+    base.join("niri/selectiontranslation.kdl")
+}
+
 const KEY_LEFTCTRL: &str = "29";
 const KEY_C: &str = "46";
 
@@ -280,7 +295,7 @@ pub fn deps_report() -> Vec<(String, bool, String)> {
         },
     ));
 
-    let kdl = crate::niri_snippet_path();
+    let kdl = niri_snippet_path();
     let installed = kdl.exists();
     out.push((
         "niri 快捷键 / 窗口规则".into(),

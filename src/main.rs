@@ -3,33 +3,20 @@
 mod autostart;
 mod fonts;
 mod popup;
-mod selection;
 mod settings_ui;
 mod theme;
 mod tray;
 
-/// 配置、预设、大模型调用、日志都住在 `seltrans-core` 里，那个 crate 不碰任何 GUI 工具包。
-/// 这里再导出一层，界面代码照旧写 `crate::config::…`，不用关心它在哪个 crate。
-pub use seltrans_core::{config, llm, logging, presets};
+/// 配置、预设、大模型调用、日志、取词都住在 `seltrans-core` 里，那个 crate 不碰任何
+/// GUI 工具包。这里再导出一层，界面代码照旧写 `crate::config::…`，不用关心它在哪个 crate。
+pub use seltrans_core::{config, llm, logging, presets, selection};
 
 use std::io::{IsTerminal, Read, Write};
-use std::path::PathBuf;
 
 pub const APP_ID: &str = "xyz.brownie.SelectionTranslation";
 pub const APP_ID_POPUP: &str = "xyz.brownie.SelectionTranslation.Popup";
 pub const APP_ID_SETTINGS: &str = "xyz.brownie.SelectionTranslation.Settings";
 pub use seltrans_core::REPO_URL;
-
-/// install.sh 会把快捷键和窗口规则写到这里
-pub fn niri_snippet_path() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var_os("HOME").unwrap_or_else(|| "/tmp".into())).join(".config")
-        });
-    base.join("niri/selectiontranslation.kdl")
-}
 
 fn help() {
     println!(

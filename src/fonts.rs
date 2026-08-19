@@ -66,24 +66,11 @@ pub fn covers_cjk(family: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// 汉字、假名、谚文、全角标点这些该用「中文字体」那一档的字符
-fn is_cjk(c: char) -> bool {
-    matches!(c as u32,
-        0x1100..=0x11FF     // 谚文字母
-        | 0x2E80..=0x303F   // 部首扩展、康熙部首、中日韩符号和标点
-        | 0x3040..=0x30FF   // 平假名、片假名
-        | 0x3100..=0x312F   // 注音
-        | 0x3130..=0x318F   // 谚文兼容字母
-        | 0x31C0..=0x31EF   // 笔画
-        | 0x3200..=0x9FFF   // 带圈字符、中日韩统一表意文字
-        | 0xA960..=0xA97F
-        | 0xAC00..=0xD7FF   // 谚文音节
-        | 0xF900..=0xFAFF   // 兼容表意文字
-        | 0xFE30..=0xFE4F   // 中日韩兼容形式
-        | 0xFF00..=0xFFEF   // 全角字符
-        | 0x20000..=0x3FFFF // 扩展 B 及以后
-    )
-}
+/// 汉字、假名、谚文、全角标点这些该用「中文字体」那一档的字符。
+///
+/// 区间表在 `seltrans_core::typography` 里 —— 那边生成 web 版的 `unicode-range`，
+/// 这边驱动 Pango 属性，共用一张表才不会两边说不同的话。
+use seltrans_core::typography::is_cjk;
 
 /// 给缓冲区里的汉字范围打上「用中文字体」的标记。
 ///

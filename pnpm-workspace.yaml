@@ -1,0 +1,7 @@
+# vite 的打包器 esbuild 要跑安装脚本装原生二进制，pnpm 10+ 默认拦截所有安装脚本。
+# 不放行的话 `vite build` 会报 esbuild 二进制缺失。
+#
+# 键名随 pnpm 版本变过两次：package.json 的 "pnpm.onlyBuiltDependencies"
+# → pnpm-workspace.yaml 的 onlyBuiltDependencies → pnpm 11 的 allowBuilds。
+allowBuilds:
+  esbuild: true

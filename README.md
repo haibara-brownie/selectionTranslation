@@ -151,9 +151,15 @@ seltrans log -f                    # 跟踪运行日志
 
 这一点很重要，因为 CSS 的 `font-family` 是**逐字符**回退的 —— 列表里第一个有该字形的字体就赢了。而 JetBrains Maple Mono 这类字体自带汉字，光靠回退顺序的话选它当拉丁字体就会把「中文字体」那档彻底架空。
 
-所以不靠回退顺序猜：译文和原文区给汉字范围打 `GtkTextTag`，界面上的按钮、标签则遍历控件树逐个挂 Pango 属性。结果是同一行里 `lockfile` 用 Maple、汉字用衬线，泾渭分明。
+所以不靠回退顺序猜。GTK 版：译文和原文区给汉字范围打 `GtkTextTag`，界面上的按钮、标签则遍历控件树逐个挂 Pango 属性。Tauri 版：用 `@font-face` 的 `unicode-range` 把两档**各自钉死**在自己的字符区间。结果都是同一行里 `lockfile` 用 Maple、汉字用衬线，泾渭分明。
 
-三档都选「系统默认」就完全不发 `font-family`，用系统的。
+> **中文字体那一档，要选真的有汉字的字体。**
+> 举个真实的坑：`HarmonyOS Sans` 是纯拉丁族，**没有汉字**，带汉字的是 `HarmonyOS Sans SC`。
+> 选错了的话，汉字既进不了中文档（它没有字形），也不会退给拉丁档（拉丁档被挡在汉字区外），
+> 最后落到系统默认字体 —— 不会显示成豆腐块，但也不是你选的那个字体。
+
+三档都选「系统默认」就完全不发 `font-family`，用系统的。只填拉丁字体不填中文字体时，
+拉丁字体不受限制、管全部字符（它自带汉字这时候是好事）。
 
 ### 附加请求体
 
@@ -247,36 +253,67 @@ CssProvider 默认静默忽略解析错误，接上 `parsing-error` 信号写进
 
 ## 开发
 
-仓库是一个 cargo workspace，分两层：**核心逻辑**不碰任何 GUI 工具包，**界面层**才依赖 GTK。
-这条线是为将来支持 mac / Windows 划的 —— 换界面时核心那半边原样搬走。
+仓库是一个 cargo workspace，分**核心**与**界面**两层：核心不碰任何 GUI 工具包。
+这条线是为支持 mac / Windows 划的 —— 换界面时核心那半边原样搬走。
+
+界面层目前**有两套并存**：能用的 GTK4 版，和迁移中的 Tauri 版。
+日常用的是 GTK 版；Tauri 版还只有弹窗，追平之后会取代它。
 
 ```
-crates/seltrans-core/src/     核心逻辑（无 GUI 依赖）
+crates/seltrans-core/src/     核心逻辑（零 GUI 依赖，三平台通用）
 ├── config.rs       配置读写（原子写 + 0600）
 ├── presets.rs      供应商预设 + 目标语言列表 + 七条内置提示词
-├── llm.rs          OpenAI 兼容与 Anthropic 两套流式后端
-└── logging.rs      日志、文本预览、零宽字符判空
+├── llm.rs          OpenAI 兼容与 Anthropic 两套流式后端 + SSE 解码器
+├── logging.rs      日志、文本预览、零宽字符判空
+├── palette.rs      Catppuccin 四风味色值
+├── typography.rs   汉字区间表 + 按脚本分档的字体 CSS
+└── selection/      取词，按平台切（mod.rs / linux.rs / unsupported.rs）
 
-src/                          界面层（GTK4 / libadwaita）
+src/                          界面层 ①：GTK4 / libadwaita（当前可用）
 ├── main.rs         CLI 分发：popup / tray / settings / translate / log / autostart
 ├── popup.rs        翻译弹窗 + 常驻模式 + 托盘命令派发
 ├── settings_ui.rs  配置界面
-├── theme.rs        Catppuccin 四风味配色 + 明暗切换
-├── fonts.rs        字体家族枚举 + 按字符脚本分配字体
-├── selection.rs    取词：主选区 / 模拟 Ctrl+C / 修饰键守卫 / 依赖自检
+├── theme.rs        把 palette 翻译成 GTK 认识的 CSS
+├── fonts.rs        字体家族枚举 + Pango 属性按脚本分字体
 ├── tray.rs         StatusNotifierItem 托盘
 └── autostart.rs    ~/.config/autostart 里的 desktop 文件读写
+
+src-tauri/src/                界面层 ②：Tauri 2（迁移中，只有弹窗）
+├── main.rs         CLI 分流 + 窗口创建 + Wayland app-id
+├── cmds.rs         前端能调的命令（薄搬运层，不放业务逻辑）
+└── state.rs        首屏状态打包
+
+ui/                           Tauri 的前端（Vite + TypeScript，无框架）
+├── index.html      弹窗版面
+├── popup.ts        渲染与交互
+└── style.css       只用 CSS 变量，不写死任何色值
 ```
 
 往 core 里加东西之前先问一句：**这段代码在 mac 和 Windows 上还成立吗？**
 平台相关的部分（取词、托盘、快捷键、自启）不属于 core。
 
 ```bash
-cargo build --release        # 编译
-cargo clippy --all-targets   # 静态检查
+cargo build                              # 编译（GTK 版 + Tauri 版）
+cargo clippy --workspace --all-targets -- -D warnings   # 静态检查
+cargo fmt --check
+cargo test --workspace                   # 测试
+
+pnpm install && pnpm tauri dev           # 跑 Tauri 版（会同时起 vite）
 ```
 
-技术栈：Rust 2024 + GTK4 / libadwaita（`gtk4` 0.11、`libadwaita` 0.9）、tokio、reqwest（rustls）、ksni（托盘）、jiff（时间戳）。无数据库，配置落 XDG 目录。
+> **`--workspace` 不能省。** 仓库根的 `Cargo.toml` 既是 workspace 根又是一个 package，
+> 裸跑 `cargo test` / `cargo clippy` **只作用于根包**，会静默跳过 core 和 Tauri 那两个
+> crate 然后报 ok。
+
+技术栈：Rust 2024 + GTK4 / libadwaita（`gtk4` 0.11、`libadwaita` 0.9）+ Tauri 2.11、tokio、reqwest（rustls）、ksni（托盘）、jiff（时间戳）；前端 Vite 7 + TypeScript，不上框架。无数据库，配置落 XDG 目录。
+
+### Tauri 版的已知限制（迁移中）
+
+- 只有弹窗。设置页、托盘、开机自启还得用 `seltrans` 那个二进制。
+- 全局快捷键在 Linux 上**只能**由合成器 spawn（Wayland 没有对应协议，Tauri 的
+  global-shortcut 插件在 Wayland 下注册会"成功"但回调永不触发）。mac / Windows 上
+  才用得了插件。
+- 窗口浮动位置靠 niri 的窗口规则，按 app-id + 标题匹配，见 `data/niri-snippet.kdl`。
 
 ## 许可
 
