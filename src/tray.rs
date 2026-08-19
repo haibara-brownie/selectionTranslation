@@ -195,7 +195,10 @@ impl Tray for SelTray {
             title: "划词翻译".into(),
             description: format!(
                 "{} · {}\n风格：{}　目标语言：{}\nMod+Shift+T 翻译选中的文本",
-                self.snap.provider_name, self.snap.model, self.snap.prompt_label, self.snap.target_lang
+                self.snap.provider_name,
+                self.snap.model,
+                self.snap.prompt_label,
+                self.snap.target_lang
             ),
         }
     }

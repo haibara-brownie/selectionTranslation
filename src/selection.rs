@@ -42,10 +42,10 @@ fn release_all_modifiers() {
         .chain(MODIFIER_KEYS.iter().map(|k| format!("{k}:0")))
         .collect();
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    if let Err(e) = run("ydotool", &refs) {
-        if !e.is_empty() {
-            logging::warn(&format!("抬起修饰键失败：{e}"));
-        }
+    if let Err(e) = run("ydotool", &refs)
+        && !e.is_empty()
+    {
+        logging::warn(&format!("抬起修饰键失败：{e}"));
     }
 }
 
@@ -98,10 +98,10 @@ fn read_clipboard() -> Option<String> {
         &["--no-newline", "-t", "text/plain"][..],
         &["--no-newline"][..],
     ] {
-        if let Ok(s) = run("wl-paste", args) {
-            if !s.is_empty() {
-                return Some(s);
-            }
+        if let Ok(s) = run("wl-paste", args)
+            && !s.is_empty()
+        {
+            return Some(s);
         }
     }
     None
@@ -157,8 +157,7 @@ fn copy_via_ydotool() -> Result<String, String> {
     )
     .map_err(|e| {
         let msg = if e.is_empty() {
-            "ydotool 执行失败，请确认 ydotool 服务在跑：systemctl --user status ydotool"
-                .to_string()
+            "ydotool 执行失败，请确认 ydotool 服务在跑：systemctl --user status ydotool".to_string()
         } else {
             format!("ydotool 执行失败：{e}")
         };

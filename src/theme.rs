@@ -9,6 +9,9 @@
 use adw::prelude::*;
 use std::cell::{Cell, RefCell};
 
+/// 一整套 Catppuccin 色值。有几个色现在没用上，但整套留着 —— 调样式时随手就能取，
+/// 缺了反而要回官方调色板翻。
+#[allow(dead_code)]
 pub struct Flavor {
     pub id: &'static str,
     pub label: &'static str,
@@ -137,9 +140,9 @@ pub fn flavor_by_id(id: &str) -> Option<&'static Flavor> {
 fn css(f: &Flavor, font_family: Option<&str>) -> String {
     // 输入 / 译文两个框：surface0 底 + surface1 描边，圆角卡片
     let font_rule = match font_family {
-        Some(list) => format!(
-            "\nwindow, popover, tooltip, dialog {{\n  font-family: {list};\n}}\n"
-        ),
+        Some(list) => {
+            format!("\nwindow, popover, tooltip, dialog {{\n  font-family: {list};\n}}\n")
+        }
         None => String::new(),
     };
 
@@ -423,19 +426,20 @@ pub fn hook_widgets(root: &impl IsA<gtk::Widget>) {
 
 pub fn hook_popover_animations(root: &impl IsA<gtk::Widget>) {
     fn walk(w: &gtk::Widget) {
-        if let Some(p) = w.downcast_ref::<gtk::Popover>() {
-            if !p.has_css_class("st-pop-a") && !p.has_css_class("st-pop-b") {
-                p.add_css_class("st-pop-a");
-                p.connect_map(|p| {
-                    if p.has_css_class("st-pop-a") {
-                        p.remove_css_class("st-pop-a");
-                        p.add_css_class("st-pop-b");
-                    } else {
-                        p.remove_css_class("st-pop-b");
-                        p.add_css_class("st-pop-a");
-                    }
-                });
-            }
+        if let Some(p) = w.downcast_ref::<gtk::Popover>()
+            && !p.has_css_class("st-pop-a")
+            && !p.has_css_class("st-pop-b")
+        {
+            p.add_css_class("st-pop-a");
+            p.connect_map(|p| {
+                if p.has_css_class("st-pop-a") {
+                    p.remove_css_class("st-pop-a");
+                    p.add_css_class("st-pop-b");
+                } else {
+                    p.remove_css_class("st-pop-b");
+                    p.add_css_class("st-pop-a");
+                }
+            });
         }
         let mut c = w.first_child();
         while let Some(child) = c {

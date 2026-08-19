@@ -82,7 +82,10 @@ fn build_general(st: &Rc<St>) -> adw::PreferencesPage {
         .build();
 
     let current = st.cfg.borrow().target_lang.clone();
-    match presets::TARGET_LANGS.iter().position(|(v, _)| *v == current) {
+    match presets::TARGET_LANGS
+        .iter()
+        .position(|(v, _)| *v == current)
+    {
         Some(i) => {
             lang_row.set_selected(i as u32);
             custom_row.set_visible(false);
@@ -565,8 +568,11 @@ fn rebuild_providers(st: &Rc<St>) {
                                 let mut cfg = st.cfg.borrow_mut();
                                 cfg.providers.retain(|x| x.id != id);
                                 if cfg.active_provider == id {
-                                    cfg.active_provider =
-                                        cfg.providers.first().map(|x| x.id.clone()).unwrap_or_default();
+                                    cfg.active_provider = cfg
+                                        .providers
+                                        .first()
+                                        .map(|x| x.id.clone())
+                                        .unwrap_or_default();
                                 }
                             }
                             st.save();
@@ -595,9 +601,14 @@ fn rebuild_providers(st: &Rc<St>) {
 
 /// 供应商编辑对话框。`id` 为 None 表示新建。
 fn edit_provider(st: &Rc<St>, id: Option<String>) {
-    let existing = id
-        .as_ref()
-        .and_then(|i| st.cfg.borrow().providers.iter().find(|p| p.id == *i).cloned());
+    let existing = id.as_ref().and_then(|i| {
+        st.cfg
+            .borrow()
+            .providers
+            .iter()
+            .find(|p| p.id == *i)
+            .cloned()
+    });
 
     let mut p = existing.clone().unwrap_or_else(|| Provider {
         id: new_id(),
@@ -686,7 +697,9 @@ fn edit_provider(st: &Rc<St>, id: Option<String>) {
         .build();
     hint.add_css_class("dim-label");
     hint.add_css_class("caption");
-    let key_link = gtk::LinkButton::builder().label("打开申请 API Key 的页面").build();
+    let key_link = gtk::LinkButton::builder()
+        .label("打开申请 API Key 的页面")
+        .build();
     key_link.set_halign(gtk::Align::Start);
     let hint_box = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -769,9 +782,7 @@ fn edit_provider(st: &Rc<St>, id: Option<String>) {
             // 换预设时自动填好 base_url；名称若还是上一个预设的名字也一并换掉
             url_row.set_text(pre.base_url);
             let cur = name_row.text().to_string();
-            if cur.trim().is_empty()
-                || PROVIDER_PRESETS.iter().any(|x| x.name == cur)
-            {
+            if cur.trim().is_empty() || PROVIDER_PRESETS.iter().any(|x| x.name == cur) {
                 name_row.set_text(pre.name);
             }
             apply_hint(pre);
@@ -860,7 +871,9 @@ fn edit_provider(st: &Rc<St>, id: Option<String>) {
 
     cancel.connect_clicked({
         let dialog = dialog.clone();
-        move |_| { dialog.close(); }
+        move |_| {
+            dialog.close();
+        }
     });
 
     save.connect_clicked({
@@ -1101,8 +1114,11 @@ fn rebuild_prompts(st: &Rc<St>) {
                     let mut cfg = st.cfg.borrow_mut();
                     cfg.prompts.retain(|x| x.id != id);
                     if cfg.active_prompt == id {
-                        cfg.active_prompt =
-                            cfg.prompts.first().map(|x| x.id.clone()).unwrap_or_default();
+                        cfg.active_prompt = cfg
+                            .prompts
+                            .first()
+                            .map(|x| x.id.clone())
+                            .unwrap_or_default();
                     }
                 }
                 st.save();
@@ -1225,7 +1241,9 @@ fn edit_prompt(st: &Rc<St>, id: Option<String>) {
 
     cancel.connect_clicked({
         let dialog = dialog.clone();
-        move |_| { dialog.close(); }
+        move |_| {
+            dialog.close();
+        }
     });
 
     save.connect_clicked({
@@ -1277,7 +1295,9 @@ fn build_about() -> adw::PreferencesPage {
         .icon_name("help-about-symbolic")
         .build();
 
-    let g = adw::PreferencesGroup::builder().title("selectionTranslation").build();
+    let g = adw::PreferencesGroup::builder()
+        .title("selectionTranslation")
+        .build();
     g.add(
         &adw::ActionRow::builder()
             .title("版本")
@@ -1349,7 +1369,10 @@ fn build_about() -> adw::PreferencesPage {
 
     let g2 = adw::PreferencesGroup::builder().title("依赖自检").build();
     for (name, ok, note) in selection::deps_report() {
-        let row = adw::ActionRow::builder().title(&name).subtitle(&note).build();
+        let row = adw::ActionRow::builder()
+            .title(&name)
+            .subtitle(&note)
+            .build();
         let icon = gtk::Image::from_icon_name(if ok {
             "emblem-ok-symbolic"
         } else {
@@ -1409,7 +1432,12 @@ fn build(app: &adw::Application, page: Option<&str>) {
     rebuild_providers(&st);
     rebuild_prompts(&st);
 
-    stack.add_titled_with_icon(&general, Some("general"), "通用", "preferences-system-symbolic");
+    stack.add_titled_with_icon(
+        &general,
+        Some("general"),
+        "通用",
+        "preferences-system-symbolic",
+    );
     stack.add_titled_with_icon(
         &providers_page,
         Some("providers"),
@@ -1435,7 +1463,7 @@ fn build(app: &adw::Application, page: Option<&str>) {
     toolbar.set_content(Some(&toasts));
     window.set_content(Some(&toolbar));
     crate::theme::hook_widgets(&window);
-    window.connect_map(|w| crate::theme::hook_widgets(w));
+    window.connect_map(crate::theme::hook_widgets);
 
     if let Some(name) = page {
         stack.set_visible_child_name(name);

@@ -247,28 +247,36 @@ CssProvider 默认静默忽略解析错误，接上 `parsing-error` 信号写进
 
 ## 开发
 
+仓库是一个 cargo workspace，分两层：**核心逻辑**不碰任何 GUI 工具包，**界面层**才依赖 GTK。
+这条线是为将来支持 mac / Windows 划的 —— 换界面时核心那半边原样搬走。
+
 ```
-src/
-├── main.rs         CLI 分发：popup / tray / settings / translate / log / autostart
+crates/seltrans-core/src/     核心逻辑（无 GUI 依赖）
 ├── config.rs       配置读写（原子写 + 0600）
-├── logging.rs      日志、文本预览、零宽字符判空
-├── fonts.rs        字体家族枚举 + font-family 生成
 ├── presets.rs      供应商预设 + 目标语言列表 + 七条内置提示词
-├── selection.rs    取词：主选区 / 模拟 Ctrl+C / 修饰键守卫 / 依赖自检
 ├── llm.rs          OpenAI 兼容与 Anthropic 两套流式后端
-├── theme.rs        Catppuccin 四风味配色 + 明暗切换
-├── tray.rs         StatusNotifierItem 托盘
-├── autostart.rs    ~/.config/autostart 里的 desktop 文件读写
+└── logging.rs      日志、文本预览、零宽字符判空
+
+src/                          界面层（GTK4 / libadwaita）
+├── main.rs         CLI 分发：popup / tray / settings / translate / log / autostart
 ├── popup.rs        翻译弹窗 + 常驻模式 + 托盘命令派发
-└── settings_ui.rs  配置界面
+├── settings_ui.rs  配置界面
+├── theme.rs        Catppuccin 四风味配色 + 明暗切换
+├── fonts.rs        字体家族枚举 + 按字符脚本分配字体
+├── selection.rs    取词：主选区 / 模拟 Ctrl+C / 修饰键守卫 / 依赖自检
+├── tray.rs         StatusNotifierItem 托盘
+└── autostart.rs    ~/.config/autostart 里的 desktop 文件读写
 ```
+
+往 core 里加东西之前先问一句：**这段代码在 mac 和 Windows 上还成立吗？**
+平台相关的部分（取词、托盘、快捷键、自启）不属于 core。
 
 ```bash
 cargo build --release        # 编译
 cargo clippy --all-targets   # 静态检查
 ```
 
-技术栈：Rust 2024 + GTK4 / libadwaita（`gtk4` 0.11、`libadwaita` 0.9）、tokio、reqwest（rustls）、ksni（托盘）。无数据库，配置落 XDG 目录。
+技术栈：Rust 2024 + GTK4 / libadwaita（`gtk4` 0.11、`libadwaita` 0.9）、tokio、reqwest（rustls）、ksni（托盘）、jiff（时间戳）。无数据库，配置落 XDG 目录。
 
 ## 许可
 

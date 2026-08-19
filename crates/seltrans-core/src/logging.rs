@@ -29,17 +29,15 @@ pub fn log_path() -> PathBuf {
 }
 
 fn timestamp() -> String {
-    gtk::glib::DateTime::now_local()
-        .and_then(|d| d.format("%Y-%m-%d %H:%M:%S"))
-        .map(|s| s.to_string())
-        .unwrap_or_else(|_| "????-??-?? ??:??:??".to_string())
+    // 本地时区。不用 time crate 的 local offset —— 它在多线程程序里会静默退回 UTC。
+    jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 fn rotate_if_needed(path: &PathBuf) {
-    if let Ok(meta) = std::fs::metadata(path) {
-        if meta.len() > MAX_BYTES {
-            let _ = std::fs::rename(path, path.with_extension("log.1"));
-        }
+    if let Ok(meta) = std::fs::metadata(path)
+        && meta.len() > MAX_BYTES
+    {
+        let _ = std::fs::rename(path, path.with_extension("log.1"));
     }
 }
 
@@ -79,8 +77,7 @@ pub fn error(msg: &str) {
 /// 把一段文本压成适合写进日志的一行预览：截断 + 转义换行 + 标出不可见字符
 pub fn preview(text: &str) -> String {
     let mut out = String::new();
-    let mut n = 0;
-    for c in text.chars() {
+    for (n, c) in text.chars().enumerate() {
         if n >= PREVIEW_CHARS {
             out.push('…');
             break;
@@ -97,7 +94,6 @@ pub fn preview(text: &str) -> String {
             '\u{00a0}' => out.push_str("<NBSP>"),
             c => out.push(c),
         }
-        n += 1;
     }
     out
 }
@@ -106,9 +102,13 @@ pub fn preview(text: &str) -> String {
 /// 网页上选到空行、图标字体时很容易拿到一串肉眼看不见的字符，
 /// 直接发给模型就会得到"你没有提供要翻译的内容"这种回复。
 pub fn is_blank(text: &str) -> bool {
-    !text
-        .chars()
-        .any(|c| !c.is_whitespace() && !matches!(c, '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{feff}' | '\u{00a0}'))
+    !text.chars().any(|c| {
+        !c.is_whitespace()
+            && !matches!(
+                c,
+                '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{feff}' | '\u{00a0}'
+            )
+    })
 }
 
 /// 程序启动时记一条，方便对齐时间线
@@ -117,7 +117,7 @@ pub fn startup(cmd: &str) {
     let _ = write!(
         s,
         "===== seltrans {} 启动，子命令={} pid={} =====",
-        env!("CARGO_PKG_VERSION"),
+        crate::VERSION,
         cmd,
         std::process::id()
     );

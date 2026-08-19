@@ -1,0 +1,13 @@
+[package]
+name = "seltrans-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-channel = { workspace = true }
+futures-util = { workspace = true }
+jiff = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }

@@ -65,7 +65,8 @@ impl Ui {
     /// 当前输入框里的内容 —— 翻译的唯一数据源
     fn input_text(&self) -> String {
         let buf = self.src_view.buffer();
-        buf.text(&buf.start_iter(), &buf.end_iter(), false).to_string()
+        buf.text(&buf.start_iter(), &buf.end_iter(), false)
+            .to_string()
     }
 
     fn set_input(&self, text: &str) {
@@ -86,7 +87,8 @@ impl Ui {
 
     fn output_text(&self) -> String {
         let buf = self.out_buffer();
-        buf.text(&buf.start_iter(), &buf.end_iter(), false).to_string()
+        buf.text(&buf.start_iter(), &buf.end_iter(), false)
+            .to_string()
     }
 
     fn busy(&self, on: bool) {
@@ -111,7 +113,10 @@ impl Ui {
 
         let pnames: Vec<String> = cfg.providers.iter().map(|p| p.name.clone()).collect();
         set_dropdown(&self.provider_dd, &pnames);
-        let cur = cfg.providers.iter().position(|p| p.id == cfg.active_provider);
+        let cur = cfg
+            .providers
+            .iter()
+            .position(|p| p.id == cfg.active_provider);
         if let Some(i) = cur {
             self.provider_dd.set_selected(i as u32);
         }
@@ -123,10 +128,10 @@ impl Ui {
             _ => vec!["（未设置模型）".to_string()],
         };
         set_dropdown(&self.model_dd, &models);
-        if let Some(p) = cfg.active_provider() {
-            if let Some(i) = models.iter().position(|m| *m == p.model) {
-                self.model_dd.set_selected(i as u32);
-            }
+        if let Some(p) = cfg.active_provider()
+            && let Some(i) = models.iter().position(|m| *m == p.model)
+        {
+            self.model_dd.set_selected(i as u32);
         }
 
         drop(cfg);
@@ -181,7 +186,8 @@ impl Ui {
         self.generation.set(round);
         self.set_output("");
         self.busy(true);
-        self.status.set_text(&format!("{} · {}", provider.name, provider.model));
+        self.status
+            .set_text(&format!("{} · {}", provider.name, provider.model));
 
         let (tx, rx) = async_channel::unbounded::<llm::Event>();
         llm::runtime().spawn(llm::stream_translate(provider, system, source, tx));
@@ -316,9 +322,7 @@ fn build(app: &adw::Application) -> Rc<Ui> {
         .tooltip_text("设置")
         .build();
 
-    let header = adw::HeaderBar::builder()
-        .title_widget(&prompt_dd)
-        .build();
+    let header = adw::HeaderBar::builder().title_widget(&prompt_dd).build();
     header.pack_end(&settings_btn);
     header.pack_end(&copy_btn);
     header.pack_start(&redo_btn);
@@ -437,7 +441,7 @@ fn build(app: &adw::Application) -> Rc<Ui> {
     toolbar.set_content(Some(&content));
     window.set_content(Some(&toolbar));
     crate::theme::hook_widgets(&window);
-    window.connect_map(|w| crate::theme::hook_widgets(w));
+    window.connect_map(crate::theme::hook_widgets);
 
     let ui = Rc::new(Ui {
         window: window.clone(),

@@ -1,16 +1,16 @@
 //! selectionTranslation —— niri / Wayland 下的全局划词翻译。
 
 mod autostart;
-mod config;
 mod fonts;
-mod llm;
-mod logging;
 mod popup;
-mod presets;
 mod selection;
 mod settings_ui;
 mod theme;
 mod tray;
+
+/// 配置、预设、大模型调用、日志都住在 `seltrans-core` 里，那个 crate 不碰任何 GUI 工具包。
+/// 这里再导出一层，界面代码照旧写 `crate::config::…`，不用关心它在哪个 crate。
+pub use seltrans_core::{config, llm, logging, presets};
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -18,7 +18,7 @@ use std::path::PathBuf;
 pub const APP_ID: &str = "xyz.brownie.SelectionTranslation";
 pub const APP_ID_POPUP: &str = "xyz.brownie.SelectionTranslation.Popup";
 pub const APP_ID_SETTINGS: &str = "xyz.brownie.SelectionTranslation.Settings";
-pub const REPO_URL: &str = "https://github.com/haibara-brownie/selectionTranslation";
+pub use seltrans_core::REPO_URL;
 
 /// install.sh 会把快捷键和窗口规则写到这里
 pub fn niri_snippet_path() -> PathBuf {
@@ -106,7 +106,7 @@ fn cli_translate(args: &[String]) -> i32 {
     };
     let system = cfg.render_system(&prompt);
 
-    let code = llm::runtime().block_on(async move {
+    llm::runtime().block_on(async move {
         let (tx, rx) = async_channel::unbounded();
         tokio::spawn(llm::stream_translate(provider, system, source, tx));
         let mut out = std::io::stdout();
@@ -133,8 +133,7 @@ fn cli_translate(args: &[String]) -> i32 {
             let _ = out.write_all(b"\n");
         }
         code
-    });
-    code
+    })
 }
 
 /// `seltrans log [-f]`
@@ -163,7 +162,10 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("popup");
 
-    if matches!(cmd, "popup" | "settings" | "config" | "translate" | "tray" | "daemon") {
+    if matches!(
+        cmd,
+        "popup" | "settings" | "config" | "translate" | "tray" | "daemon"
+    ) {
         logging::startup(cmd);
     }
 
@@ -177,7 +179,11 @@ fn main() {
                 _ => {
                     println!(
                         "开机自启动：{}\n用法：seltrans autostart on|off",
-                        if autostart::is_enabled() { "已开启" } else { "已关闭" }
+                        if autostart::is_enabled() {
+                            "已开启"
+                        } else {
+                            "已关闭"
+                        }
                     );
                     std::process::exit(0);
                 }
@@ -198,9 +204,7 @@ fn main() {
             let page = args
                 .get(2)
                 .map(|s| s.trim_start_matches("--").to_string())
-                .filter(|s| {
-                    matches!(s.as_str(), "general" | "providers" | "prompts" | "about")
-                });
+                .filter(|s| matches!(s.as_str(), "general" | "providers" | "prompts" | "about"));
             settings_ui::run(page)
         }
         "translate" => cli_translate(&args),

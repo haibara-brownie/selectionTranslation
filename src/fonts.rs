@@ -153,7 +153,7 @@ fn cjk_attrs(text: &str, family: &str) -> Option<gtk::pango::AttrList> {
     }
     let list = gtk::pango::AttrList::new();
     let mut any = false;
-    let mut push = |start: usize, end: usize| {
+    let push = |start: usize, end: usize| {
         let mut a = gtk::pango::AttrString::new_family(family);
         a.set_start_index(start as u32);
         a.set_end_index(end as u32);
