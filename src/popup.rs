@@ -27,6 +27,10 @@ struct Ui {
     generation: Cell<u64>,
     /// 正在以代码方式改动下拉框时，不要触发重新翻译
     quiet: Cell<bool>,
+    /// 常驻（托盘）模式：关窗口只藏起来，不退出进程
+    resident: Cell<bool>,
+    /// 持有它，GTK 才不会在最后一个窗口关掉时退出。丢弃即等于放弃常驻。
+    hold: RefCell<Option<gtk::gio::ApplicationHoldGuard>>,
 }
 
 impl Ui {
@@ -93,6 +97,18 @@ impl Ui {
 
         drop(cfg);
         self.quiet.set(false);
+    }
+
+    /// 收起弹窗：常驻模式下只是隐藏，否则真的关掉
+    fn dismiss(&self) {
+        // 让还在路上的流失效，免得藏起来之后还在往里写
+        self.generation.set(self.generation.get() + 1);
+        self.busy(false);
+        if self.resident.get() {
+            self.window.set_visible(false);
+        } else {
+            self.window.close();
+        }
     }
 
     fn save_cfg(&self) {
@@ -347,6 +363,8 @@ fn build(app: &adw::Application) -> Rc<Ui> {
         source: RefCell::new(String::new()),
         generation: Cell::new(0),
         quiet: Cell::new(false),
+        resident: Cell::new(false),
+        hold: RefCell::new(None),
     });
     ui.busy(false);
     ui.sync_controls();
@@ -444,7 +462,7 @@ fn build(app: &adw::Application) -> Rc<Ui> {
             let shift = state.contains(gtk::gdk::ModifierType::SHIFT_MASK);
             match keyval {
                 gtk::gdk::Key::Escape => {
-                    ui.window.close();
+                    ui.dismiss();
                     glib::Propagation::Stop
                 }
                 gtk::gdk::Key::F5 => {
@@ -461,6 +479,19 @@ fn build(app: &adw::Application) -> Rc<Ui> {
         }
     });
     window.add_controller(key);
+
+    // 常驻模式下点标题栏的关闭按钮只是把窗口藏起来，进程和托盘图标都留着
+    window.connect_close_request({
+        let ui = ui.clone();
+        move |_| {
+            if ui.resident.get() {
+                ui.dismiss();
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        }
+    });
 
     ui
 }
@@ -480,9 +511,28 @@ fn provider_mut<'a>(cfg: &'a mut Config, id: &str) -> Option<&'a mut Provider> {
     }
 }
 
+/// 前台模式：弹一次窗，窗口关掉进程就退出
 pub fn run(text_override: Option<String>) -> i32 {
+    run_inner(text_override, false)
+}
+
+/// 常驻模式：注册托盘图标，不主动弹窗，进程一直在
+///
+/// 好处不止是"能看见它在跑" —— 快捷键再触发时是复用这个进程，省掉 GTK 冷启动，
+/// 弹窗几乎是瞬间出来的。
+pub fn run_tray() -> i32 {
+    // 已经有常驻进程了就直接退出。否则第二个进程会把 activate 转给已在跑的那个，
+    // 结果登录时凭空弹出一个翻译窗口。
+    if crate::tray::is_running() {
+        crate::logging::info("已有常驻进程在跑，本次 tray 启动直接退出");
+        return 0;
+    }
+    run_inner(None, true)
+}
+
+fn run_inner(text_override: Option<String>, tray_mode: bool) -> i32 {
     // 带 --text 时不复用已有实例，方便调试
-    let flags = if text_override.is_some() {
+    let flags = if text_override.is_some() && !tray_mode {
         gtk::gio::ApplicationFlags::NON_UNIQUE
     } else {
         gtk::gio::ApplicationFlags::empty()
@@ -494,6 +544,7 @@ pub fn run(text_override: Option<String>) -> i32 {
         .build();
 
     let ui_slot: Rc<RefCell<Option<Rc<Ui>>>> = Rc::new(RefCell::new(None));
+    let tray_ready = Rc::new(Cell::new(false));
 
     app.connect_activate(move |app| {
         let ui = {
@@ -507,9 +558,109 @@ pub fn run(text_override: Option<String>) -> i32 {
                 }
             }
         };
+
+        if tray_mode && !tray_ready.get() {
+            // 这次 activate 是托盘进程自己启动，不是用户按快捷键，所以不弹窗
+            tray_ready.set(true);
+            ui.resident.set(true);
+            *ui.hold.borrow_mut() = Some(app.hold());
+            setup_tray(app, &ui);
+            return;
+        }
+
         ui.window.present();
         ui.refresh(text_override.clone());
     });
 
     glib::ExitCode::get(&app.run_with_args::<&str>(&[])) as i32
+}
+
+/// 注册托盘图标，并把托盘菜单的点击派发回 GTK 主线程
+fn setup_tray(app: &adw::Application, ui: &Rc<Ui>) {
+    use crate::tray::{Cmd, SelTray, Snapshot};
+
+    let (tx, rx) = async_channel::unbounded::<Cmd>();
+    let snap = Snapshot::from_config(&ui.cfg.borrow());
+    // 图标必须在 GTK 主线程上光栅化，之后 ksni 只是搬运像素
+    let icons = crate::tray::render_icons();
+    if icons.is_empty() {
+        crate::logging::warn("托盘图标光栅化失败，将退回按名字查找主题图标");
+    }
+    let tray = SelTray::new(tx, snap, icons);
+
+    let handle = match llm::runtime().block_on(async {
+        use ksni::TrayMethods;
+        tray.spawn().await
+    }) {
+        Ok(h) => {
+            crate::logging::info("托盘图标已注册");
+            Some(h)
+        }
+        Err(e) => {
+            crate::logging::error(&format!(
+                "托盘注册失败（面板可能没有提供 StatusNotifierWatcher）：{e}"
+            ));
+            None
+        }
+    };
+
+    // 配置变了就把托盘菜单的快照刷新一遍
+    let refresh_tray = {
+        let handle = handle.clone();
+        let ui = ui.clone();
+        move || {
+            let Some(h) = handle.clone() else { return };
+            let snap = Snapshot::from_config(&ui.cfg.borrow());
+            llm::runtime().spawn(async move {
+                h.update(move |t: &mut SelTray| t.snap = snap).await;
+            });
+        }
+    };
+
+    let app = app.clone();
+    let ui = ui.clone();
+    glib::spawn_future_local(async move {
+        while let Ok(cmd) = rx.recv().await {
+            crate::logging::info(&format!("托盘命令：{cmd:?}"));
+            match cmd {
+                Cmd::Translate => {
+                    ui.window.present();
+                    ui.refresh(None);
+                }
+                Cmd::Settings(page) => open_settings(page),
+                Cmd::SetProvider(id) => {
+                    *ui.cfg.borrow_mut() = Config::load();
+                    ui.cfg.borrow_mut().active_provider = id;
+                    ui.save_cfg();
+                    ui.sync_controls();
+                    refresh_tray();
+                }
+                Cmd::SetPrompt(id) => {
+                    *ui.cfg.borrow_mut() = Config::load();
+                    ui.cfg.borrow_mut().active_prompt = id;
+                    ui.save_cfg();
+                    ui.sync_controls();
+                    refresh_tray();
+                }
+                Cmd::SetAutostart(on) => {
+                    if let Err(e) = crate::autostart::set_enabled(on) {
+                        crate::logging::error(&format!("设置开机自启动失败：{e}"));
+                    }
+                    refresh_tray();
+                }
+                Cmd::OpenLog => {
+                    let p = crate::logging::log_path();
+                    if !p.exists() {
+                        let _ = std::fs::write(&p, "");
+                    }
+                    let _ = std::process::Command::new("xdg-open").arg(&p).spawn();
+                }
+                Cmd::Quit => {
+                    crate::logging::info("从托盘退出");
+                    app.quit();
+                    return;
+                }
+            }
+        }
+    });
 }

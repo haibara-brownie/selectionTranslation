@@ -5,7 +5,8 @@ niri / Wayland 下的全局划词翻译。选中任意界面里的文字，按�
 - **任何界面都能用** —— 主选区取词为主，取不到时自动回退到模拟 Ctrl+C（读完会还原剪贴板）
 - **翻译风格可切** —— 内置通用、GitHub / 技术文档、科学杂志 / 论文、日常口语、术语解释、报错解读、中译英润色七种，可自由增删改
 - **模型随便换** —— 内置十家供应商预设，选中即自动填好 base_url；模型列表实时从 `/v1/models` 拉取，不写死在程序里
-- **单文件二进制** —— Rust + GTK4/libadwaita，约 6 MB，运行时只依赖桌面本来就有的 gtk4 / libadwaita
+- **托盘常驻** —— 系统托盘有图标，一眼看得出在不在跑；左键直接翻译，右键切风格 / 切供应商；可开机自启
+- **单文件二进制** —— Rust + GTK4/libadwaita，约 9 MB，运行时只依赖桌面本来就有的 gtk4 / libadwaita
 
 ## 安装
 
@@ -47,6 +48,34 @@ Arch 上一次装齐：`pac rust gtk4 libadwaita wl-clipboard ydotool`
 | `Ctrl+Shift+C` | 在弹窗里复制译文 |
 
 弹窗顶部的下拉框可以随时换翻译风格，底部可以换供应商和模型，**换完立刻用新设置重译同一段文字**。
+
+## 托盘
+
+`seltrans tray` 会常驻后台并在系统托盘显示图标（蓝色的「A文」）。
+
+- **左键点图标** —— 直接翻译当前选中的文本
+- **右键** —— 完整菜单：当前供应商/模型/风格、翻译选中文本、切换翻译风格、切换供应商、设置、查看日志、开机自启动、退出
+- 悬停有 tooltip 显示当前配置
+
+常驻的好处不只是"看得见它在跑"：快捷键触发时是复用这个进程，省掉 GTK 冷启动，弹窗几乎是瞬间出来的。常驻模式下关闭弹窗（Esc 或标题栏叉）只是把窗口藏起来，进程和图标都还在。
+
+走的是 StatusNotifierItem over D-Bus，和 FlClash / Cherry Studio / cc-switch 同一套协议，任何提供 `org.kde.StatusNotifierWatcher` 的面板都能显示（DMS 的 Quickshell、waybar、KDE 等）。
+
+图标是**内嵌在二进制里再光栅化后通过 D-Bus 传给面板**的，不走图标主题查找 —— 因为面板通常在自己启动时就把图标主题缓存住了，之后新装的图标按名字找不到，只会显示个首字母兜底。
+
+### 开机自启动
+
+设置界面「通用」页有开关，托盘右键菜单里也有；命令行是：
+
+```bash
+seltrans autostart on
+seltrans autostart off
+seltrans autostart        # 查看当前状态
+```
+
+实际是往 `~/.config/autostart/` 写一个 desktop 文件 —— 和 FlClash / Cherry Studio / cc-switch 用的是同一套机制（systemd 的 `xdg-desktop-autostart.target` 在图形会话起来后拉起），不需要动 niri 配置。
+
+重复启动是安全的：`seltrans tray` 发现已经有常驻进程就直接退出，不会在登录时凭空弹出翻译窗口。
 
 命令行：
 
@@ -140,16 +169,19 @@ Wayland 没有 X11 那样的全局取词 API，所以分两条路：
 
 ```
 src/
-├── main.rs         CLI 分发：popup / settings / translate
+├── main.rs         CLI 分发：popup / tray / settings / translate / log / autostart
 ├── config.rs       ~/.config/seltrans/config.json 读写（原子写 + 0600）
 ├── logging.rs      日志、文本预览、零宽字符判空
 ├── presets.rs      供应商预设目录 + 目标语言列表 + 七条内置提示词
 ├── selection.rs    取词：主选区 / 模拟 Ctrl+C / 修饰键守卫 / 依赖自检
 ├── llm.rs          OpenAI 兼容与 Anthropic 两套流式后端
-├── popup.rs        翻译弹窗
+├── tray.rs         StatusNotifierItem 托盘：菜单、内嵌图标光栅化
+├── autostart.rs    ~/.config/autostart 里的 desktop 文件读写
+├── popup.rs        翻译弹窗 + 常驻模式 + 托盘命令派发
 └── settings_ui.rs  配置界面
 data/
 ├── niri-snippet.kdl                        快捷键与窗口规则
+├── xyz.brownie.SelectionTranslation.svg     图标（也编进二进制供托盘使用）
 └── xyz.brownie.SelectionTranslation.desktop 桌面项
 ```
 

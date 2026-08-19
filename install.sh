@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # selectionTranslation 安装脚本
 #
-#   ./install.sh              编译 + 安装二进制 + 桌面项 + niri 快捷键与窗口规则
-#   ./install.sh --no-niri    不动 niri 配置
-#   ./install.sh --uninstall  卸载
+#   ./install.sh                 编译 + 安装二进制/图标/桌面项 + niri 快捷键与窗口规则
+#                                + 开启开机自启动并立刻拉起托盘
+#   ./install.sh --no-niri       不动 niri 配置
+#   ./install.sh --no-autostart  不设开机自启动、不启动托盘
+#   ./install.sh --uninstall     卸载
 #
 # 改动 niri 配置前会先备份 config.kdl。全程不需要 root。
 
@@ -16,7 +18,10 @@ NIRI_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/niri"
 NIRI_SNIPPET="${NIRI_DIR}/selectiontranslation.kdl"
 NIRI_CONFIG="${NIRI_DIR}/config.kdl"
 INCLUDE_LINE='include "selectiontranslation.kdl"'
-DESKTOP_FILE="xyz.brownie.SelectionTranslation.desktop"
+APP_ID="xyz.brownie.SelectionTranslation"
+DESKTOP_FILE="${APP_ID}.desktop"
+ICON_DIR="${HOME}/.local/share/icons/hicolor/scalable/apps"
+AUTOSTART_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/${DESKTOP_FILE}"
 
 info() { printf '\033[1;34m::\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*"; }
@@ -24,8 +29,11 @@ ok()   { printf '\033[1;32m✓\033[0m %s\n' "$*"; }
 
 uninstall() {
     info "卸载 selectionTranslation"
+    for p in $(pgrep -x seltrans 2>/dev/null); do kill "$p" 2>/dev/null; done
     rm -f "${BIN_DIR}/seltrans" && ok "已删除 ${BIN_DIR}/seltrans"
     rm -f "${APP_DIR}/${DESKTOP_FILE}" && ok "已删除桌面项"
+    rm -f "${ICON_DIR}/${APP_ID}.svg" && ok "已删除图标"
+    rm -f "$AUTOSTART_FILE" && ok "已关闭开机自启动"
     if [[ -f "$NIRI_SNIPPET" ]]; then
         rm -f "$NIRI_SNIPPET"
         ok "已删除 $NIRI_SNIPPET"
@@ -41,11 +49,13 @@ uninstall() {
 }
 
 DO_NIRI=1
+DO_AUTOSTART=1
 for arg in "$@"; do
     case "$arg" in
-        --uninstall) uninstall ;;
-        --no-niri)   DO_NIRI=0 ;;
-        -h|--help)   sed -n '2,9p' "$0"; exit 0 ;;
+        --uninstall)    uninstall ;;
+        --no-niri)      DO_NIRI=0 ;;
+        --no-autostart) DO_AUTOSTART=0 ;;
+        -h|--help)      sed -n '2,11p' "$0"; exit 0 ;;
         *) warn "未知参数：$arg"; exit 2 ;;
     esac
 done
@@ -70,6 +80,13 @@ case ":${PATH}:" in
     *":${BIN_DIR}:"*) ;;
     *) warn "${BIN_DIR} 不在 PATH 里，niri 的 spawn 可能找不到 seltrans" ;;
 esac
+
+# ---- 图标 ----
+mkdir -p "$ICON_DIR"
+install -m644 "${REPO_DIR}/data/${APP_ID}.svg" "${ICON_DIR}/${APP_ID}.svg"
+command -v gtk-update-icon-cache >/dev/null \
+    && gtk-update-icon-cache -f -t "${HOME}/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+ok "已安装图标"
 
 # ---- 桌面项 ----
 mkdir -p "$APP_DIR"
@@ -107,6 +124,20 @@ if [[ $DO_NIRI -eq 1 ]]; then
     fi
 fi
 
+# ---- 托盘常驻 / 开机自启 ----
+if [[ $DO_AUTOSTART -eq 1 ]]; then
+    "${BIN_DIR}/seltrans" autostart on >/dev/null && ok "已开启开机自启动（登录后自动常驻托盘）"
+    for p in $(pgrep -x seltrans 2>/dev/null); do kill "$p" 2>/dev/null; done
+    sleep 0.5
+    setsid "${BIN_DIR}/seltrans" tray >/dev/null 2>&1 </dev/null &
+    sleep 1.5
+    if pgrep -x seltrans >/dev/null; then
+        ok "托盘已启动，顶栏右侧应该出现一个蓝色的「A文」图标"
+    else
+        warn "托盘没起来，手动跑一下看报什么：seltrans tray"
+    fi
+fi
+
 cat <<'EOF'
 
 安装完成。下一步：
@@ -116,7 +147,10 @@ cat <<'EOF'
   3. 填上 API key，点「拉取列表」挑一个模型，再点「测试连接」确认通了
   4. 随便选中一段文字，按 Mod+Shift+T
 
-弹窗里可以随时切换翻译风格（通用 / GitHub / 科学杂志 / 口语 / 术语解释 / 报错解读 / 中译英），
+托盘图标：左键点一下 = 翻译当前选中的文本；右键是完整菜单
+（切风格、切供应商、设置、看日志、开机自启动、退出）。
+
+弹窗里也可以随时切换翻译风格（通用 / GitHub / 科学杂志 / 口语 / 术语解释 / 报错解读 / 中译英），
 切换后会立刻用新风格重译。
 
 EOF

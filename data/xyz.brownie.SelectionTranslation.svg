@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <!-- selectionTranslation 图标：左「A」右「文」，表示两种文字之间的转换。
+       纯路径描边，不依赖任何字体；只保留两个字形，保证缩到 22px 托盘尺寸仍清晰。 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a9fe8"/>
+      <stop offset="1" stop-color="#2f6fd0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="2" y="2" width="44" height="44" rx="10" fill="url(#bg)"/>
+
+  <!-- 左侧字母 A（外轮廓 + 中间三角挖空，evenodd） -->
+  <path fill="#ffffff" fill-rule="evenodd"
+        d="M13.2 9 h6.6 L28 39 h-5.6 l-1.5-6.1 h-7.8 L11.6 39 H6 Z
+           M15.3 27.7 h4.9 L17.8 17.6 Z"/>
+
+  <!-- 右侧汉字「文」 -->
+  <g fill="none" stroke="#ffffff" stroke-width="3.1"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M37 9.5 v3.2"/>
+    <path d="M29 17.6 h16"/>
+    <path d="M42 23 L31.6 38.6"/>
+    <path d="M32 23 L42.4 38.6"/>
+  </g>
+</svg>

@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use crate::config::{Config, Prompt, Provider, new_id};
 use crate::presets::{PROVIDER_PRESETS, preset_by_id};
-use crate::{APP_ID_SETTINGS, REPO_URL, config, llm, logging, presets, selection};
+use crate::{APP_ID_SETTINGS, REPO_URL, autostart, config, llm, logging, presets, selection, tray};
 
 const SEL_MODES: [(&str, &str); 3] = [
     ("auto", "自动（主选区优先，取不到再模拟 Ctrl+C）"),
@@ -198,6 +198,93 @@ fn build_general(st: &Rc<St>) -> adw::PreferencesPage {
     g3.add(&w);
     g3.add(&h);
     page.add(&g3);
+
+    // ---- 后台常驻 / 托盘 ----
+    let g_tray = adw::PreferencesGroup::builder()
+        .title("后台常驻")
+        .description(
+            "常驻后会在系统托盘显示图标，一眼就能看出程序在不在跑；\
+             左键点图标直接翻译选中的文本，右键有完整菜单。\
+             另外快捷键触发时是复用这个进程，省掉冷启动，弹窗几乎瞬间出来。",
+        )
+        .build();
+
+    let auto_row = adw::SwitchRow::builder()
+        .title("开机自启动")
+        .subtitle("登录后自动常驻托盘")
+        .active(autostart::is_enabled())
+        .build();
+    auto_row.connect_active_notify({
+        let st = st.clone();
+        move |r| {
+            let on = r.is_active();
+            match autostart::set_enabled(on) {
+                Ok(()) => st.toast(if on {
+                    "已开启开机自启动"
+                } else {
+                    "已关闭开机自启动"
+                }),
+                Err(e) => st.toast(&format!("设置失败：{e}")),
+            }
+        }
+    });
+    g_tray.add(&auto_row);
+
+    let status_row = adw::ActionRow::builder().title("托盘状态").build();
+    let start_btn = gtk::Button::builder()
+        .label("启动")
+        .valign(gtk::Align::Center)
+        .build();
+    let refresh_btn = gtk::Button::builder()
+        .icon_name("view-refresh-symbolic")
+        .tooltip_text("刷新状态")
+        .valign(gtk::Align::Center)
+        .build();
+    refresh_btn.add_css_class("flat");
+    status_row.add_suffix(&refresh_btn);
+    status_row.add_suffix(&start_btn);
+
+    let sync_status = {
+        let status_row = status_row.clone();
+        let start_btn = start_btn.clone();
+        move || {
+            if tray::is_running() {
+                status_row.set_subtitle("运行中 —— 退出请点托盘图标右键菜单里的「退出」");
+                start_btn.set_sensitive(false);
+                start_btn.set_label("已在运行");
+            } else {
+                status_row.set_subtitle("未运行");
+                start_btn.set_sensitive(true);
+                start_btn.set_label("启动");
+            }
+        }
+    };
+    sync_status();
+
+    start_btn.connect_clicked({
+        let st = st.clone();
+        let sync_status = sync_status.clone();
+        move |_| {
+            if let Ok(exe) = std::env::current_exe() {
+                match std::process::Command::new(exe).arg("tray").spawn() {
+                    Ok(_) => st.toast("托盘已启动"),
+                    Err(e) => st.toast(&format!("启动失败：{e}")),
+                }
+            }
+            // 给它一点时间注册到会话总线上再刷新状态
+            let sync_status = sync_status.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(1200), move || {
+                sync_status();
+            });
+        }
+    });
+    refresh_btn.connect_clicked({
+        let sync_status = sync_status.clone();
+        move |_| sync_status()
+    });
+
+    g_tray.add(&status_row);
+    page.add(&g_tray);
 
     let g4 = adw::PreferencesGroup::builder()
         .title("快捷键")

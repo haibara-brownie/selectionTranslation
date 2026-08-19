@@ -1,5 +1,6 @@
 //! selectionTranslation —— niri / Wayland 下的全局划词翻译。
 
+mod autostart;
 mod config;
 mod llm;
 mod logging;
@@ -7,10 +8,12 @@ mod popup;
 mod presets;
 mod selection;
 mod settings_ui;
+mod tray;
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::PathBuf;
 
+pub const APP_ID: &str = "xyz.brownie.SelectionTranslation";
 pub const APP_ID_POPUP: &str = "xyz.brownie.SelectionTranslation.Popup";
 pub const APP_ID_SETTINGS: &str = "xyz.brownie.SelectionTranslation.Settings";
 pub const REPO_URL: &str = "https://github.com/haibara-brownie/selectionTranslation";
@@ -37,6 +40,8 @@ seltrans {ver} —— niri 下的划词翻译
                                    页面可选 general / providers / prompts / about
   seltrans translate [--text <文本>]
                                    在终端里翻译并打印结果，不开窗口
+  seltrans tray                    常驻后台并在托盘显示图标（开机自启跑的就是这个）
+  seltrans autostart [on|off]      查看 / 设置开机自启动
   seltrans log [-f]                查看运行日志（-f 为持续跟踪）
   seltrans --version               显示版本
   seltrans --help                  显示本帮助
@@ -155,12 +160,36 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("popup");
 
-    if matches!(cmd, "popup" | "settings" | "config" | "translate") {
+    if matches!(cmd, "popup" | "settings" | "config" | "translate" | "tray" | "daemon") {
         logging::startup(cmd);
     }
 
     let code = match cmd {
         "log" | "logs" => show_log(&args),
+        "tray" | "daemon" => popup::run_tray(),
+        "autostart" => {
+            let on = match args.get(2).map(String::as_str) {
+                Some("on" | "enable" | "true") => true,
+                Some("off" | "disable" | "false") => false,
+                _ => {
+                    println!(
+                        "开机自启动：{}\n用法：seltrans autostart on|off",
+                        if autostart::is_enabled() { "已开启" } else { "已关闭" }
+                    );
+                    std::process::exit(0);
+                }
+            };
+            match autostart::set_enabled(on) {
+                Ok(()) => {
+                    println!("开机自启动已{}", if on { "开启" } else { "关闭" });
+                    0
+                }
+                Err(e) => {
+                    eprintln!("seltrans: 设置失败：{e}");
+                    1
+                }
+            }
+        }
         "popup" => popup::run(arg_text(&args)),
         "settings" | "config" => {
             let page = args
