@@ -39,3 +39,11 @@ window-rule {
     default-window-height { fixed 480; }
     default-floating-position x=16 y=16 relative-to="top-right"
 }
+
+// Tauri 版的设置窗口：同一个 app-id，靠标题区分
+window-rule {
+    match app-id=r#"^xyz\.brownie\.SelectionTranslation$"# title="设置$"
+    open-floating true
+    default-column-width { fixed 900; }
+    default-window-height { fixed 700; }
+}

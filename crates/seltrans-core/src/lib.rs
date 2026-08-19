@@ -10,6 +10,7 @@ pub mod logging;
 pub mod palette;
 pub mod presets;
 pub mod selection;
+pub mod system_fonts;
 pub mod typography;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -188,14 +188,22 @@ impl Config {
     }
 }
 
+/// 配置目录。三平台各按各自的规矩：
+///
+/// | 平台 | 位置 |
+/// |---|---|
+/// | Linux | `$XDG_CONFIG_HOME/seltrans`，默认 `~/.config/seltrans` |
+/// | macOS | `~/Library/Application Support/seltrans` |
+/// | Windows | `%APPDATA%\seltrans` |
+///
+/// 早先这里是手写的 XDG 逻辑，`HOME` 取不到就落到 `/tmp` —— Windows 上通常没有
+/// `HOME`，配置会静静地写进临时目录，重启就没了。交给 `dirs` 去查各平台的正解。
 pub fn config_dir() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var_os("HOME").unwrap_or_else(|| "/tmp".into())).join(".config")
-        });
-    base.join("seltrans")
+    dirs::config_dir()
+        // 一个能查到用户目录的系统上这里不会发生；真发生了也别 panic，
+        // 落到临时目录至少还能跑起来让用户看见错误信息
+        .unwrap_or_else(std::env::temp_dir)
+        .join("seltrans")
 }
 
 pub fn config_path() -> PathBuf {

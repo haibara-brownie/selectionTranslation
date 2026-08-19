@@ -1,0 +1,466 @@
+/* 设置页样式。
+ *
+ * 只用 style.css 已经定义好的变量（--ctp-* 由 Rust 注入），这里不出现任何写死的色值。
+ * 控件词汇见 lib/dom.ts，命名跟 libadwaita 对齐（group / row / comboRow …）。
+ */
+
+body.settings {
+  /* 设置页是正经窗口，不像弹窗那样要透明圆角 */
+  background: var(--ctp-base);
+}
+
+body.settings .shell {
+  border: none;
+  border-radius: 0;
+}
+
+/* ---------- 顶部标签页 ---------- */
+
+.tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.tab {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ctp-subtext0);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  transition: background-color 130ms ease, color 130ms ease;
+}
+
+.tab:hover {
+  background: var(--ctp-surface0);
+  color: var(--ctp-text);
+}
+
+.tab.current {
+  background: color-mix(in srgb, var(--ctp-blue) 18%, transparent);
+  color: var(--ctp-blue);
+  font-weight: 600;
+}
+
+/* ---------- 页面容器 ---------- */
+
+.pane {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 20px 16px;
+  overflow-y: auto;
+}
+
+/* 切页动画：只做很轻的淡入 + 上移，别喧宾夺主 */
+.pane > * {
+  animation: pane-in 180ms ease both;
+}
+
+@keyframes pane-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ---------- 分组 ---------- */
+
+.group {
+  margin-top: 22px;
+}
+
+.group-head h2 {
+  margin: 0;
+  color: var(--ctp-text);
+  font-size: 0.95em;
+  font-weight: 700;
+}
+
+.group-sub {
+  margin: 3px 0 0;
+  color: var(--ctp-subtext0);
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+
+.rows {
+  margin-top: 10px;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 12px;
+  background: var(--ctp-surface0);
+  overflow: hidden;
+}
+
+.rows:empty {
+  display: none;
+}
+
+/* ---------- 行 ---------- */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 46px;
+  padding: 9px 14px;
+}
+
+/* `display: flex` 是作者样式，优先级压过 [hidden] 的浏览器默认规则 ——
+   不写这一条的话 `row.hidden = true` 设了等于没设，行照样显示。
+   同理下面的 .row + .row 分隔线也要跳过隐藏行，否则会留下一条孤零零的线。 */
+.row[hidden] {
+  display: none;
+}
+
+.row:not([hidden]) ~ .row:not([hidden]) {
+  border-top: 1px solid color-mix(in srgb, var(--ctp-surface1) 60%, transparent);
+}
+
+.row-block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* 说明文字吃掉剩余空间，但**不许把右边的控件挤出去**。
+   不写 flex 约束的话，一条长 subtitle（比如中文字体那句警告）会把行撑开，
+   控件被推到可视区之外，只剩一条缝 —— 实测出来的。 */
+.row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.row-title {
+  color: var(--ctp-text);
+}
+
+.row-sub {
+  margin-top: 2px;
+  color: var(--ctp-subtext0);
+  font-size: 0.84em;
+  line-height: 1.45;
+}
+
+/* 中文字体选错成纯拉丁族时的警告，见 docs/adr/0001 */
+.row-sub.warn {
+  color: var(--ctp-yellow);
+}
+
+/* 控件保持自然宽度，不跟着文字一起被压缩 */
+.row-tail {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------- 输入控件 ---------- */
+
+.entry,
+.textarea,
+.combo-input {
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 8px;
+  background: var(--ctp-mantle);
+  color: var(--ctp-text);
+  font-family: inherit;
+  font-size: inherit;
+  transition: border-color 130ms ease, box-shadow 130ms ease;
+}
+
+.entry,
+.combo-input {
+  width: min(340px, 100%);
+}
+
+.textarea {
+  width: 100%;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.entry:focus,
+.textarea:focus,
+.combo-input:focus {
+  outline: none;
+  border-color: var(--ctp-blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ctp-blue) 28%, transparent);
+}
+
+/* ---------- 带搜索的下拉 ---------- */
+
+.combo {
+  position: relative;
+  width: min(340px, 100%);
+}
+
+.combo-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  max-height: 280px;
+  padding: 5px;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 12px;
+  background: var(--ctp-surface0);
+  /* 用 crust（每个风味里最深的那档）而不是裸黑色：浅色主题下纯黑阴影显得脏 */
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ctp-crust) 45%, transparent);
+  overflow-y: auto;
+  animation: combo-in 130ms ease both;
+}
+
+@keyframes combo-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.combo-item {
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.combo-item:hover,
+.combo-item.active {
+  background: var(--ctp-surface1);
+}
+
+.combo-item.current {
+  color: var(--ctp-blue);
+  font-weight: 600;
+}
+
+.combo-empty {
+  padding: 6px 10px;
+  color: var(--ctp-overlay0);
+  font-size: 0.86em;
+}
+
+/* ---------- 开关 ---------- */
+
+.switch-wrap {
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.switch {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-track {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--ctp-surface2);
+  transition: background-color 160ms ease;
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ctp-base);
+  transition: transform 160ms ease;
+}
+
+.switch:checked + .switch-track {
+  background: var(--ctp-blue);
+}
+
+.switch:checked + .switch-track::after {
+  transform: translateX(18px);
+}
+
+.switch:focus-visible + .switch-track {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ctp-blue) 40%, transparent);
+}
+
+/* ---------- 按钮 ---------- */
+
+.btn {
+  padding: 6px 14px;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 8px;
+  background: var(--ctp-surface0);
+  color: var(--ctp-text);
+  font-family: inherit;
+  font-size: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 130ms ease, border-color 130ms ease;
+}
+
+.btn:hover {
+  background: var(--ctp-surface1);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn.accent {
+  border-color: transparent;
+  background: var(--ctp-blue);
+  color: var(--ctp-base);
+  font-weight: 600;
+}
+
+.btn.accent:hover {
+  background: color-mix(in srgb, var(--ctp-blue) 85%, white);
+}
+
+.btn.danger {
+  color: var(--ctp-red);
+}
+
+.btn.danger:hover {
+  background: color-mix(in srgb, var(--ctp-red) 16%, transparent);
+}
+
+/* ---------- 状态与提示 ---------- */
+
+.status-dot {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 12px;
+}
+
+.status-dot.ok {
+  background: color-mix(in srgb, var(--ctp-green) 20%, transparent);
+  color: var(--ctp-green);
+}
+
+.status-dot.bad {
+  background: color-mix(in srgb, var(--ctp-red) 20%, transparent);
+  color: var(--ctp-red);
+}
+
+.notice {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.88em;
+  line-height: 1.6;
+}
+
+.notice.info {
+  background: color-mix(in srgb, var(--ctp-blue) 12%, transparent);
+  color: var(--ctp-text);
+}
+
+.notice.warn {
+  background: color-mix(in srgb, var(--ctp-yellow) 14%, transparent);
+  color: var(--ctp-text);
+}
+
+.notice.ok {
+  background: color-mix(in srgb, var(--ctp-green) 13%, transparent);
+  color: var(--ctp-text);
+}
+
+/* 供应商 / 提示词卡片里"当前启用"的那个 */
+.row.current {
+  background: color-mix(in srgb, var(--ctp-blue) 10%, transparent);
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ctp-blue) 20%, transparent);
+  color: var(--ctp-blue);
+  font-size: 0.78em;
+  font-weight: 600;
+}
+
+.empty {
+  padding: 26px 14px;
+  color: var(--ctp-overlay0);
+  text-align: center;
+}
+
+/* ---------- 对话框 ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--ctp-crust) 62%, transparent);
+  animation: fade-in 140ms ease both;
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: min(620px, 100%);
+  /* 下面 .wide 会覆盖宽度 */
+  max-height: 100%;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 14px;
+  background: var(--ctp-base);
+  overflow: hidden;
+  animation: modal-in 160ms ease both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+.modal-head {
+  padding: 14px 18px;
+  background: var(--ctp-mantle);
+  font-weight: 700;
+}
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 18px 14px;
+  overflow-y: auto;
+}
+
+.modal-body .group:first-child {
+  margin-top: 14px;
+}
+
+.modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  background: var(--ctp-mantle);
+}

@@ -7,6 +7,7 @@
  */
 
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
@@ -23,7 +24,18 @@ type UiState = {
   configured: boolean;
 };
 
-type LaunchArgs = { text: string | null; inputMode: boolean };
+/**
+ * 一轮翻译请求。
+ *
+ * `text` 到这儿时**已经是取好词的结果** —— 取词归 Rust，而且必须赶在这个窗口拿到
+ * 焦点之前做完，否则模拟出来的复制键会发给我们自己。取不到就带着 `error` 过来，
+ * 界面把原因显示出来并让用户直接手输。
+ */
+type TranslateRequest = {
+  text: string | null;
+  inputMode: boolean;
+  error: string | null;
+};
 
 type UiEvent =
   | { kind: "delta"; text: string }
@@ -179,9 +191,12 @@ function wire() {
   ui.retranslate.addEventListener("click", translate);
   ui.copy.addEventListener("click", copyOutput);
   ui.close.addEventListener("click", () => win.close());
-  ui.settings.addEventListener("click", () => {
-    // 设置页还在 GTK 版里（迁移方案的 P2），这里先如实说明
-    setStatus("设置页请用 `seltrans settings`（Tauri 版还没做）");
+  ui.settings.addEventListener("click", async () => {
+    try {
+      await invoke("open_settings", { page: null });
+    } catch (e) {
+      setStatus(String(e), true);
+    }
   });
 
   ui.prompt.addEventListener("change", async () => {
@@ -217,13 +232,36 @@ function wire() {
   });
 }
 
+/** 走一轮：把请求里的文本放进原文框，能翻就翻 */
+async function apply(req: TranslateRequest) {
+  if (req.inputMode) {
+    ui.source.value = "";
+    ui.output.textContent = "";
+    updateCount();
+    ui.source.focus();
+    return;
+  }
+
+  if (req.error !== null) {
+    // 取词失败不是死路：把原因说清楚，让用户直接在输入框里敲
+    setStatus(req.error, true);
+    ui.source.focus();
+    updateCount();
+    return;
+  }
+
+  ui.source.value = req.text ?? "";
+  updateCount();
+  await translate();
+}
+
 async function boot() {
   wire();
 
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const [s, launch] = await Promise.all([
     invoke<UiState>("load_state", { systemDark }),
-    invoke<LaunchArgs>("launch_args"),
+    invoke<TranslateRequest>("launch_args"),
   ]);
   renderState(s);
 
@@ -233,30 +271,22 @@ async function boot() {
     ui.theme.textContent = next.css;
   });
 
-  if (launch.inputMode) {
-    ui.source.focus();
-    updateCount();
-    return;
-  }
-
-  if (launch.text !== null) {
-    ui.source.value = launch.text;
-  } else {
-    setStatus("取词中…");
+  // 常驻模式下窗口是复用的：第二次按快捷键不会重建 webview（那要几百毫秒，
+  // 划词翻译最忌讳这个），Rust 取完词直接发事件过来换一批内容。
+  await listen<TranslateRequest>("seltrans://translate", async (ev) => {
+    // 配置可能在设置页里改过了，顺手刷一遍供应商/提示词/配色
     try {
-      ui.source.value = await invoke<string>("grab_selection");
-    } catch (e) {
-      // 取词失败不是死路：把原因说清楚，让用户直接在输入框里敲
-      setStatus(String(e), true);
-      ui.source.focus();
-      updateCount();
-      return;
+      renderState(await invoke<UiState>("load_state", { systemDark: dark() }));
+    } catch {
+      // 刷不动就用旧的接着跑，别把这一轮翻译卡死
     }
-  }
+    await apply(ev.payload);
+  });
 
-  updateCount();
-  await translate();
+  await apply(launch);
 }
+
+const dark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
 
 boot().catch((e) => {
   setStatus(`启动失败：${e}`, true);

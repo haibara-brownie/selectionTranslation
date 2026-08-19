@@ -13,15 +13,24 @@ use std::path::PathBuf;
 const MAX_BYTES: u64 = 1024 * 1024; // 超过 1MB 就轮转一次
 const PREVIEW_CHARS: usize = 120;
 
+/// 日志目录。三平台各按各自的规矩：
+///
+/// | 平台 | 位置 |
+/// |---|---|
+/// | Linux | `$XDG_STATE_HOME/seltrans`，默认 `~/.local/state/seltrans` |
+/// | macOS | `~/Library/Application Support/seltrans` |
+/// | Windows | `%LOCALAPPDATA%\seltrans` |
+///
+/// 早先这里是手写的 XDG 逻辑，`HOME` 取不到就落到 `/tmp` —— Windows 上通常没有
+/// `HOME`，日志会静静地写进临时目录，用户按「查看日志」什么也找不到。
+///
+/// `dirs::state_dir()` 只有 Linux 有（那是 XDG 独有的概念），另两个平台退到
+/// `data_local_dir()`。
 pub fn log_dir() -> PathBuf {
-    let base = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var_os("HOME").unwrap_or_else(|| "/tmp".into()))
-                .join(".local/state")
-        });
-    base.join("seltrans")
+    dirs::state_dir()
+        .or_else(dirs::data_local_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("seltrans")
 }
 
 pub fn log_path() -> PathBuf {

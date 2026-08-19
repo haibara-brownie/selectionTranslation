@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>划词翻译 · 设置</title>
+    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./settings.css" />
+    <!-- 调色板与字体分档由 Rust 生成后注入 -->
+    <style id="theme"></style>
+  </head>
+  <body class="settings">
+    <div class="shell">
+      <header class="topbar" data-tauri-drag-region>
+        <nav class="tabs" id="tabs">
+          <button class="tab" data-page="general">通用</button>
+          <button class="tab" data-page="providers">供应商</button>
+          <button class="tab" data-page="prompts">提示词</button>
+          <button class="tab" data-page="about">关于</button>
+        </nav>
+        <div class="spacer"></div>
+        <button id="close" class="icon-btn danger" title="关闭（Esc）">✕</button>
+      </header>
+
+      <main class="pane" id="pane"><!-- 各页在这里挂载 --></main>
+
+      <footer class="statusbar">
+        <span id="status" class="status"></span>
+      </footer>
+    </div>
+
+    <!-- 对话框（编辑供应商 / 提示词 / 选模型）挂在这里 -->
+    <div id="modal-root"></div>
+
+    <script type="module" src="./settings.ts"></script>
+  </body>
+</html>

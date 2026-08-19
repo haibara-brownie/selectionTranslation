@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+# 查系统字体。挑它是因为三平台各走各的原生后端（fontconfig / CoreText / DirectWrite），
+# 不用把 Pango 这种 GUI 工具包拖进核心 crate。
+# 三平台的配置 / 日志目录各有各的规矩，别手写 XDG 那套（Windows 上没有 HOME）
+dirs = "6.0"
+font-kit = "0.14"
+
 async-channel = { workspace = true }
 futures-util = { workspace = true }
 jiff = { workspace = true }
@@ -11,3 +17,40 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+
+# macOS 取词（selection/macos.rs）。
+#
+# 辅助功能 API 没有替代品，只能上原生绑定；模拟按键交给 enigo。
+#
+# 注意 Windows 那边**没有**用 enigo：它要一次 SendInput 把整批修饰键抬起（同批不会被
+# 真实输入插队），enigo 是一键一次调用做不到。mac 这边 CGEvent 没有同样的批量语义，
+# 用 enigo 的收益（少写一堆 unsafe）大于代价。两边不一致是有意的，不是漏改。
+# 剪贴板**没**用 arboard —— 它读不到 NSPasteboard 的 changeCount，而判断「⌘C 到底有没有
+# 生效」靠 changeCount 比对比内容可靠得多（用户选中的文本正好和剪贴板里已有的一样时，
+# 对比内容会误判成没变化）。arboard 在 mac 上本来也是走 objc2-app-kit，直接用不多花依赖。
+#
+# objc2 系列全部 default-features = false，只开真正用到的头文件 —— 默认 feature 会把
+# 整个 AppKit / ApplicationServices 都翻译一遍，编译时间不必要地翻好几倍。
+[target.'cfg(target_os = "macos")'.dependencies]
+enigo = "0.6.1"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard"] }
+objc2-application-services = { version = "0.3.2", default-features = false, features = ["std", "HIServices", "AXUIElement", "AXError"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# 剪贴板。关掉默认特性是为了甩掉 image-data —— 我们只读写纯文本，
+# 不该把 image 那一坨编进来。
+arboard = { version = "3.6.1", default-features = false }
+# 直接调 Win32 而不是用 enigo 模拟按键，两个理由：
+# 1. 判断「Ctrl+C 到底有没有生效」要靠 GetClipboardSequenceNumber 比对剪贴板序号
+#    （比对内容会在"选中文本恰好和剪贴板已有内容相同"时误判），这个 arboard 不给；
+# 2. 抬修饰键那一批事件必须一次 SendInput 发完 —— SendInput 保证同一批中间不会被
+#    别的输入插队，而 enigo 是一键一次调用，中间可能被插进真实按键。修饰键卡住的
+#    代价太大，这里不接受"差不多"。
+# 挑 windows-sys 而不是 windows：只要几个函数声明，不需要 COM/HRESULT 那套包装。
+# 版本取 0.61 是跟已经在依赖树里的那份对齐（0.45/0.52/0.59/0.60 是别人钉死的，躲不掉）。
+windows-sys = { version = "0.61.2", features = [
+    "Win32_System_DataExchange",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
