@@ -8,6 +8,7 @@ mod popup;
 mod presets;
 mod selection;
 mod settings_ui;
+mod theme;
 mod tray;
 
 use std::io::{IsTerminal, Read, Write};

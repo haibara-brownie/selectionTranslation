@@ -5,7 +5,8 @@ niri / Wayland 下的全局划词翻译。选中任意界面里的文字，按�
 - **任何界面都能用** —— 主选区取词为主，取不到时自动回退到模拟 Ctrl+C（读完会还原剪贴板）
 - **翻译风格可切** —— 内置通用、GitHub / 技术文档、科学杂志 / 论文、日常口语、术语解释、报错解读、中译英润色七种，可自由增删改
 - **模型随便换** —— 内置十家供应商预设，选中即自动填好 base_url；模型列表实时从 `/v1/models` 拉取，不写死在程序里
-- **托盘常驻** —— 系统托盘有图标，一眼看得出在不在跑；左键直接翻译，右键切风格 / 切供应商；可开机自启
+- **托盘常驻** —— 系统托盘有图标，一眼看得出在不在跑；左键打开输入框，右键切风格 / 切供应商；可开机自启
+- **Catppuccin 配色** —— 四个风味（Latte / Frappé / Macchiato / Mocha），可跟随系统深浅色自动切换
 - **单文件二进制** —— Rust + GTK4/libadwaita，约 9 MB，运行时只依赖桌面本来就有的 gtk4 / libadwaita
 
 ## 安装
@@ -44,16 +45,17 @@ Arch 上一次装齐：`pac rust gtk4 libadwaita wl-clipboard ydotool`
 | `Mod+Shift+T` | 翻译当前选中的文本 |
 | `Mod+Alt+T` | 打开配置界面 |
 | `Esc` | 关闭翻译弹窗 |
-| `F5` | 在弹窗里重新翻译 |
+| `Ctrl+Enter` / `F5` | 在弹窗里翻译（输入框里回车是换行） |
 | `Ctrl+Shift+C` | 在弹窗里复制译文 |
 
-弹窗顶部的下拉框可以随时换翻译风格，底部可以换供应商和模型，**换完立刻用新设置重译同一段文字**。
+弹窗分成「原文」和「译文」两张卡片。**原文那张是可编辑的**：取词取歪了能就地改，也可以什么都不选、直接打开这里手敲或粘贴，`Ctrl+Enter` 翻译。顶部的下拉框可以随时换翻译风格，底部可以换供应商和模型，**换完立刻用新设置重译同一段文字**。
 
 ## 托盘
 
-`seltrans tray` 会常驻后台并在系统托盘显示图标（蓝色的「A文」）。
+`seltrans tray` 会常驻后台并在系统托盘显示图标（蓝紫双气泡，装着 A 和 文）。
 
-- **左键点图标** —— 直接翻译当前选中的文本
+- **左键点图标** —— 打开弹窗并聚焦输入框（点图标这个动作本身通常就意味着当下没选中任何东西，所以不做"翻译选中文本"）
+- **中键点图标** —— 翻译当前选中的文本
 - **右键** —— 完整菜单：当前供应商/模型/风格、翻译选中文本、切换翻译风格、切换供应商、设置、查看日志、开机自启动、退出
 - 悬停有 tooltip 显示当前配置
 
@@ -62,6 +64,18 @@ Arch 上一次装齐：`pac rust gtk4 libadwaita wl-clipboard ydotool`
 走的是 StatusNotifierItem over D-Bus，和 FlClash / Cherry Studio / cc-switch 同一套协议，任何提供 `org.kde.StatusNotifierWatcher` 的面板都能显示（DMS 的 Quickshell、waybar、KDE 等）。
 
 图标是**内嵌在二进制里再光栅化后通过 D-Bus 传给面板**的，不走图标主题查找 —— 因为面板通常在自己启动时就把图标主题缓存住了，之后新装的图标按名字找不到，只会显示个首字母兜底。
+
+## 配色
+
+设置界面「通用 → 外观 → 配色」，选项是 Catppuccin 官方的四个风味：
+
+| 选项 | 说明 |
+|---|---|
+| 跟随系统 | 桌面浅色时用 Latte、深色时用 Mocha，系统切换会自动跟着换 |
+| Latte | 浅色 |
+| Frappé / Macchiato / Mocha | 三档深色，由浅到深 |
+
+色值直接取自 [catppuccin/palette](https://github.com/catppuccin/palette)，通过一个 GTK CssProvider 以 `STYLE_PROVIDER_PRIORITY_USER` 优先级注入，同时输出 libadwaita 1.6+ 的 CSS 变量和旧版 `@define-color`。改完立刻生效，不用重开窗口。
 
 ### 开机自启动
 
@@ -175,13 +189,14 @@ src/
 ├── presets.rs      供应商预设目录 + 目标语言列表 + 七条内置提示词
 ├── selection.rs    取词：主选区 / 模拟 Ctrl+C / 修饰键守卫 / 依赖自检
 ├── llm.rs          OpenAI 兼容与 Anthropic 两套流式后端
+├── theme.rs        Catppuccin 四风味配色 + 明暗切换
 ├── tray.rs         StatusNotifierItem 托盘：菜单、内嵌图标光栅化
 ├── autostart.rs    ~/.config/autostart 里的 desktop 文件读写
 ├── popup.rs        翻译弹窗 + 常驻模式 + 托盘命令派发
 └── settings_ui.rs  配置界面
 data/
 ├── niri-snippet.kdl                        快捷键与窗口规则
-├── xyz.brownie.SelectionTranslation.svg     图标（也编进二进制供托盘使用）
+├── xyz.brownie.SelectionTranslation.svg     图标：双气泡，Catppuccin 蓝 + 紫（也编进二进制供托盘使用）
 └── xyz.brownie.SelectionTranslation.desktop 桌面项
 ```
 

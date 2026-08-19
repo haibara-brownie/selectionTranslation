@@ -16,7 +16,8 @@ struct Ui {
     prompt_dd: gtk::DropDown,
     provider_dd: gtk::DropDown,
     model_dd: gtk::DropDown,
-    src_expander: gtk::Expander,
+    /// 原文卡片右上角的字数
+    src_count: gtk::Label,
     /// 原文输入框，可编辑
     src_view: gtk::TextView,
     out_view: gtk::TextView,
@@ -60,14 +61,14 @@ impl Ui {
         self.src_view.buffer().set_text(text);
     }
 
-    /// 折叠标题上带字数，取词取空时不用看日志就能发现
+    /// 卡片右上角显示字数，取词取空时不用看日志就能发现
     fn sync_input_label(&self) {
         let n = self.input_text().trim().chars().count();
-        self.src_expander.set_label(Some(&if n == 0 {
-            "原文（空，可直接在这里输入）".to_string()
+        self.src_count.set_text(&if n == 0 {
+            "空 · 可直接在这里输入".to_string()
         } else {
-            format!("原文（{n} 字）")
-        }));
+            format!("{n} 字")
+        });
     }
 
     fn output_text(&self) -> String {
@@ -211,8 +212,6 @@ impl Ui {
         self.busy(false);
         self.set_input("");
         self.sync_input_label();
-        self.src_expander.set_expanded(true);
-        self.src_expander.set_visible(true);
         self.set_output("");
         self.status.set_text("输入或粘贴文本，Ctrl+Enter 翻译");
         self.window.present();
@@ -234,8 +233,6 @@ impl Ui {
             Ok(t) if !crate::logging::is_blank(&t) => {
                 self.set_input(t.trim());
                 self.sync_input_label();
-                self.src_expander.set_expanded(true);
-                self.src_expander.set_visible(true);
                 self.start_translate();
             }
             Ok(_) | Err(_) => {
@@ -245,8 +242,6 @@ impl Ui {
                 };
                 self.set_input("");
                 self.sync_input_label();
-                self.src_expander.set_expanded(true);
-                self.src_expander.set_visible(true);
                 self.busy(false);
                 self.status.set_text("没取到文本");
                 self.set_output(&format!(
@@ -282,6 +277,7 @@ fn open_settings(page: Option<&str>) {
 
 fn build(app: &adw::Application) -> Rc<Ui> {
     let cfg = Config::load();
+    crate::theme::apply(&cfg.theme);
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -314,88 +310,109 @@ fn build(app: &adw::Application) -> Rc<Ui> {
     header.pack_end(&copy_btn);
     header.pack_start(&redo_btn);
 
-    // ---- 正文 ----
+    // ---- 正文：原文、译文各画成一张卡片 ----
     // 原文区是**可编辑**的：取词取歪了可以就地改，也可以什么都不选、
     // 直接点托盘图标打开这里手敲或粘贴要翻译的内容。
     let src_view = gtk::TextView::builder()
         .wrap_mode(gtk::WrapMode::WordChar)
-        .top_margin(6)
-        .bottom_margin(6)
-        .left_margin(8)
-        .right_margin(8)
+        .top_margin(8)
+        .bottom_margin(8)
+        .left_margin(10)
+        .right_margin(10)
         .build();
+
+    let src_count = gtk::Label::builder()
+        .xalign(1.0)
+        .hexpand(true)
+        .ellipsize(gtk::pango::EllipsizeMode::End)
+        .build();
+    src_count.add_css_class("st-count");
+
+    let src_head = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    let src_title = gtk::Label::builder().label("原文").xalign(0.0).build();
+    src_title.add_css_class("st-section");
+    src_head.append(&src_title);
+    src_head.append(&src_count);
 
     let src_scroller = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
-        .min_content_height(64)
-        .max_content_height(150)
+        .min_content_height(76)
+        .max_content_height(170)
         .propagate_natural_height(true)
-        .margin_top(6)
         .child(&src_view)
         .build();
-    src_scroller.add_css_class("card");
-
-    // 默认展开：取词取错 / 取空时，一眼就能看出来问题出在取词而不是模型
-    let src_expander = gtk::Expander::builder()
-        .label("原文")
-        .expanded(true)
-        .child(&src_scroller)
-        .build();
+    src_scroller.add_css_class("st-card");
 
     let out_view = gtk::TextView::builder()
         .editable(false)
         .cursor_visible(false)
         .wrap_mode(gtk::WrapMode::WordChar)
-        .top_margin(6)
-        .bottom_margin(6)
-        .vexpand(true)
+        .top_margin(8)
+        .bottom_margin(8)
+        .left_margin(10)
+        .right_margin(10)
         .build();
+
+    let spinner = gtk::Spinner::new();
+    let out_head = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(8)
+        .margin_top(4)
+        .build();
+    let out_title = gtk::Label::builder().label("译文").xalign(0.0).build();
+    out_title.add_css_class("st-section");
+    out_head.append(&out_title);
+    out_head.append(&spinner);
+
+    let out_scroller = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vexpand(true)
+        .child(&out_view)
+        .build();
+    out_scroller.add_css_class("st-card");
 
     let content = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
-        .spacing(8)
+        .spacing(6)
         .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
+        .margin_bottom(10)
+        .margin_start(14)
+        .margin_end(14)
         .build();
-    content.append(&src_expander);
-    content.append(&out_view);
-
-    let scroller = gtk::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .vexpand(true)
-        .child(&content)
-        .build();
+    content.append(&src_head);
+    content.append(&src_scroller);
+    content.append(&out_head);
+    content.append(&out_scroller);
 
     // ---- 底栏 ----
     let provider_dd = gtk::DropDown::builder().tooltip_text("供应商").build();
     let model_dd = gtk::DropDown::builder().tooltip_text("模型").build();
-    let spinner = gtk::Spinner::new();
     let status = gtk::Label::builder()
         .xalign(1.0)
         .hexpand(true)
         .ellipsize(gtk::pango::EllipsizeMode::Middle)
         .build();
-    status.add_css_class("dim-label");
-    status.add_css_class("caption");
+    status.add_css_class("st-status");
 
     let bottom = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
         .spacing(6)
         .margin_top(6)
         .margin_bottom(6)
-        .margin_start(12)
-        .margin_end(12)
+        .margin_start(14)
+        .margin_end(14)
         .build();
     bottom.append(&provider_dd);
     bottom.append(&model_dd);
-    bottom.append(&spinner);
     bottom.append(&status);
+    bottom.add_css_class("st-bottom");
 
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&scroller));
+    toolbar.set_content(Some(&content));
     toolbar.add_bottom_bar(&bottom);
     window.set_content(Some(&toolbar));
 
@@ -404,7 +421,7 @@ fn build(app: &adw::Application) -> Rc<Ui> {
         prompt_dd: prompt_dd.clone(),
         provider_dd: provider_dd.clone(),
         model_dd: model_dd.clone(),
-        src_expander,
+        src_count,
         src_view: src_view.clone(),
         out_view,
         status,

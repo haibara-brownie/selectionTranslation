@@ -7,7 +7,9 @@ use std::rc::Rc;
 
 use crate::config::{Config, Prompt, Provider, new_id};
 use crate::presets::{PROVIDER_PRESETS, preset_by_id};
-use crate::{APP_ID_SETTINGS, REPO_URL, autostart, config, llm, logging, presets, selection, tray};
+use crate::{
+    APP_ID_SETTINGS, REPO_URL, autostart, config, llm, logging, presets, selection, theme, tray,
+};
 
 const SEL_MODES: [(&str, &str); 3] = [
     ("auto", "自动（主选区优先，取不到再模拟 Ctrl+C）"),
@@ -173,6 +175,40 @@ fn build_general(st: &Rc<St>) -> adw::PreferencesPage {
     });
     g2.add(&mode_row);
     page.add(&g2);
+
+    // ---- 外观 ----
+    let g_theme = adw::PreferencesGroup::builder()
+        .title("外观")
+        .description(
+            "配色取自 Catppuccin 官方调色板。「跟随系统」会跟着桌面的深浅色设置\
+             在 Latte 与 Mocha 之间自动切换。",
+        )
+        .build();
+
+    let theme_labels: Vec<&str> = theme::CHOICES.iter().map(|(_, l)| *l).collect();
+    let theme_row = adw::ComboRow::builder()
+        .title("配色")
+        .model(&gtk::StringList::new(&theme_labels))
+        .build();
+    if let Some(i) = theme::CHOICES
+        .iter()
+        .position(|(k, _)| *k == st.cfg.borrow().theme)
+    {
+        theme_row.set_selected(i as u32);
+    }
+    theme_row.connect_selected_notify({
+        let st = st.clone();
+        move |c| {
+            if let Some((k, _)) = theme::CHOICES.get(c.selected() as usize) {
+                st.cfg.borrow_mut().theme = k.to_string();
+                st.save();
+                // 立刻生效，不用重开窗口
+                theme::apply(k);
+            }
+        }
+    });
+    g_theme.add(&theme_row);
+    page.add(&g_theme);
 
     let g3 = adw::PreferencesGroup::builder().title("弹窗").build();
     let w = adw::SpinRow::with_range(320.0, 1600.0, 20.0);
@@ -1220,6 +1256,8 @@ fn build_about() -> adw::PreferencesPage {
 // ---------------------------------------------------------------- 入口
 
 fn build(app: &adw::Application, page: Option<&str>) {
+    crate::theme::apply(&Config::load().theme);
+
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("划词翻译 · 设置")

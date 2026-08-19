@@ -67,6 +67,9 @@ pub struct Config {
     /// "auto" | "primary" | "clipboard"
     #[serde(default = "default_sel_mode")]
     pub selection_mode: String,
+    /// system / latte / frappe / macchiato / mocha
+    #[serde(default = "default_theme")]
+    pub theme: String,
     #[serde(default = "default_w")]
     pub popup_width: i32,
     #[serde(default = "default_h")]
@@ -84,6 +87,9 @@ fn default_lang() -> String {
 }
 fn default_sel_mode() -> String {
     "auto".into()
+}
+fn default_theme() -> String {
+    "system".into()
 }
 fn default_w() -> i32 {
     560
@@ -114,6 +120,7 @@ impl Default for Config {
             active_prompt: default_prompt_id(),
             target_lang: default_lang(),
             selection_mode: default_sel_mode(),
+            theme: default_theme(),
             popup_width: default_w(),
             popup_height: default_h(),
         }
