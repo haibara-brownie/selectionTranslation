@@ -8,7 +8,8 @@ use std::rc::Rc;
 use crate::config::{Config, Prompt, Provider, new_id};
 use crate::presets::{PROVIDER_PRESETS, preset_by_id};
 use crate::{
-    APP_ID_SETTINGS, REPO_URL, autostart, config, llm, logging, presets, selection, theme, tray,
+    APP_ID_SETTINGS, REPO_URL, autostart, config, fonts, llm, logging, presets, selection, theme,
+    tray,
 };
 
 const SEL_MODES: [(&str, &str); 3] = [
@@ -203,12 +204,64 @@ fn build_general(st: &Rc<St>) -> adw::PreferencesPage {
                 st.cfg.borrow_mut().theme = k.to_string();
                 st.save();
                 // 立刻生效，不用重开窗口
-                theme::apply(k);
+                theme::apply(&st.cfg.borrow());
             }
         }
     });
     g_theme.add(&theme_row);
     page.add(&g_theme);
+
+    // ---- 字体 ----
+    let g_font = adw::PreferencesGroup::builder()
+        .title("字体")
+        .description(
+            "按拉丁 → 中文 → 后备的顺序回退：拉丁字体通常没有汉字字形，\
+             遇到汉字自然落到中文字体。三档都选「系统默认」就完全不干预。",
+        )
+        .build();
+
+    let families = fonts::families();
+    for (title, subtitle, getter, setter) in [
+        (
+            "拉丁字体",
+            "英文、数字、代码",
+            Box::new(|c: &Config| c.font_latin.clone()) as Box<dyn Fn(&Config) -> String>,
+            Box::new(|c: &mut Config, v: String| c.font_latin = v)
+                as Box<dyn Fn(&mut Config, String)>,
+        ),
+        (
+            "中文字体",
+            "汉字、中文标点",
+            Box::new(|c: &Config| c.font_cjk.clone()),
+            Box::new(|c: &mut Config, v: String| c.font_cjk = v),
+        ),
+        (
+            "后备字体",
+            "前两档都没有的字形，比如 emoji、日文假名、西里尔字母",
+            Box::new(|c: &Config| c.font_fallback.clone()),
+            Box::new(|c: &mut Config, v: String| c.font_fallback = v),
+        ),
+    ] {
+        let row = font_combo(&families, &getter(&st.cfg.borrow()), title, subtitle);
+        row.connect_selected_notify({
+            let st = st.clone();
+            let families = families.clone();
+            move |c| {
+                let i = c.selected() as usize;
+                // 第 0 项是「系统默认」，对应空字符串
+                let value = if i == 0 {
+                    String::new()
+                } else {
+                    families.get(i - 1).cloned().unwrap_or_default()
+                };
+                setter(&mut st.cfg.borrow_mut(), value);
+                st.save();
+                theme::apply(&st.cfg.borrow());
+            }
+        });
+        g_font.add(&row);
+    }
+    page.add(&g_font);
 
     let g3 = adw::PreferencesGroup::builder().title("弹窗").build();
     let w = adw::SpinRow::with_range(320.0, 1600.0, 20.0);
@@ -339,6 +392,38 @@ fn build_general(st: &Rc<St>) -> adw::PreferencesPage {
     page.add(&g4);
 
     page
+}
+
+/// 字体下拉。系统上装几百个字体是常事，所以开搜索 —— AdwComboRow 要能搜，
+/// 必须给它一个 expression 告诉它拿哪个属性去匹配。
+fn font_combo(families: &[String], current: &str, title: &str, subtitle: &str) -> adw::ComboRow {
+    let mut items: Vec<&str> = vec!["系统默认"];
+    items.extend(families.iter().map(String::as_str));
+
+    let expr = gtk::PropertyExpression::new(
+        gtk::StringObject::static_type(),
+        None::<gtk::Expression>,
+        "string",
+    );
+    let row = adw::ComboRow::builder()
+        .title(title)
+        .subtitle(subtitle)
+        .model(&gtk::StringList::new(&items))
+        .expression(&expr)
+        .enable_search(true)
+        .build();
+
+    let idx = if current.trim().is_empty() {
+        0
+    } else {
+        families
+            .iter()
+            .position(|f| f == current)
+            .map(|i| i + 1)
+            .unwrap_or(0)
+    };
+    row.set_selected(idx as u32);
+    row
 }
 
 // ---------------------------------------------------------------- 供应商页
@@ -1256,7 +1341,7 @@ fn build_about() -> adw::PreferencesPage {
 // ---------------------------------------------------------------- 入口
 
 fn build(app: &adw::Application, page: Option<&str>) {
-    crate::theme::apply(&Config::load().theme);
+    crate::theme::apply(&Config::load());
 
     let window = adw::ApplicationWindow::builder()
         .application(app)

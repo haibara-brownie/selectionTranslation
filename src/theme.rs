@@ -134,10 +134,17 @@ pub fn flavor_by_id(id: &str) -> Option<&'static Flavor> {
     FLAVORS.iter().copied().find(|f| f.id == id)
 }
 
-fn css(f: &Flavor) -> String {
+fn css(f: &Flavor, font_family: Option<&str>) -> String {
     // 输入 / 译文两个框：surface0 底 + surface1 描边，圆角卡片
+    let font_rule = match font_family {
+        Some(list) => format!(
+            "\nwindow, popover, tooltip, dialog {{\n  font-family: {list};\n}}\n"
+        ),
+        None => String::new(),
+    };
+
     format!(
-        r#"
+        r#"{font_rule}
 :root {{
   --window-bg-color: {base};
   --window-fg-color: {text};
@@ -267,16 +274,18 @@ headerbar {{
 /* ---- 下拉弹层 ----
    GtkDropDown 的弹层里除了 popover 本体，还套着 listview / scrolledwindow，
    它们各自带默认底色，不一起改就会看到一块跟主题对不上的方块。 */
+/* 弹层跟卡片保持同一套视觉语言：一样的 surface0 底、surface1 描边、一样的圆角。
+   之前用 mantle 是往暗走，而卡片是往亮走，两者方向相反，看着就不像一个软件。 */
 popover > contents {{
-  background-color: {mantle};
+  background-color: {surface0};
   color: {text};
   border: 1px solid {surface1};
   border-radius: 12px;
-  padding: 4px;
-  box-shadow: 0 6px 20px alpha(#000000, 0.28);
+  padding: 5px;
+  box-shadow: 0 8px 24px alpha(#000000, 0.22);
 }}
 popover > arrow {{
-  background-color: {mantle};
+  background-color: {surface0};
   border: 1px solid {surface1};
 }}
 popover listview,
@@ -298,17 +307,22 @@ popover list > row {{
 }}
 popover listview > row:hover,
 popover list > row:hover {{
-  background-color: {surface0};
+  background-color: {surface1};
 }}
 popover listview > row:selected,
 popover list > row:selected {{
-  background-color: {blue};
-  color: {base};
+  background-color: alpha({blue}, 0.16);
+  color: {blue};
+  font-weight: 600;
+}}
+popover listview > row:selected:hover,
+popover list > row:selected:hover {{
+  background-color: alpha({blue}, 0.24);
 }}
 /* 下拉里的搜索框 */
 popover entry,
 popover .search {{
-  background-color: {surface0};
+  background-color: {mantle};
   color: {text};
   border: 1px solid {surface1};
   border-radius: 8px;
@@ -376,6 +390,7 @@ dropdown > button:active {{
     box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }}
 "#,
+        font_rule = font_rule,
         base = f.base,
         mantle = f.mantle,
         crust = f.crust,
@@ -421,35 +436,39 @@ fn provider() -> gtk::CssProvider {
     })
 }
 
-fn load(f: &Flavor) {
-    provider().load_from_string(&css(f));
+fn load(f: &Flavor, font_family: Option<&str>) {
+    provider().load_from_string(&css(f, font_family));
 }
 
-/// 按配置里的选项套用主题。`setting` 是 CHOICES 里的 id。
+/// 按配置套用主题与字体。
 ///
 /// 选「跟随系统」时会盯着 libadwaita 的深浅色状态，系统切换时自动跟着换。
-pub fn apply(setting: &str) {
+pub fn apply(cfg: &crate::config::Config) {
     let mgr = adw::StyleManager::default();
+    let font = crate::fonts::css_family(cfg);
+    let font = font.as_deref();
 
-    match flavor_by_id(setting) {
+    match flavor_by_id(&cfg.theme) {
         Some(f) => {
             mgr.set_color_scheme(if f.dark {
                 adw::ColorScheme::ForceDark
             } else {
                 adw::ColorScheme::ForceLight
             });
-            load(f);
+            load(f, font);
         }
         None => {
             mgr.set_color_scheme(adw::ColorScheme::Default);
-            load(if mgr.is_dark() { &MOCHA } else { &LATTE });
+            load(if mgr.is_dark() { &MOCHA } else { &LATTE }, font);
             WATCHING_SYSTEM.with(|w| {
                 if !w.get() {
                     w.set(true);
                     mgr.connect_dark_notify(|m| {
                         // 只有仍处于「跟随系统」时才跟着换
-                        if crate::config::Config::load().theme == "system" {
-                            load(if m.is_dark() { &MOCHA } else { &LATTE });
+                        let cfg = crate::config::Config::load();
+                        if cfg.theme == "system" {
+                            let f = crate::fonts::css_family(&cfg);
+                            load(if m.is_dark() { &MOCHA } else { &LATTE }, f.as_deref());
                         }
                     });
                 }

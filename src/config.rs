@@ -70,6 +70,13 @@ pub struct Config {
     /// system / latte / frappe / macchiato / mocha
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// 三档字体，留空表示用系统默认
+    #[serde(default)]
+    pub font_latin: String,
+    #[serde(default)]
+    pub font_cjk: String,
+    #[serde(default)]
+    pub font_fallback: String,
     #[serde(default = "default_w")]
     pub popup_width: i32,
     #[serde(default = "default_h")]
@@ -121,6 +128,9 @@ impl Default for Config {
             target_lang: default_lang(),
             selection_mode: default_sel_mode(),
             theme: default_theme(),
+            font_latin: String::new(),
+            font_cjk: String::new(),
+            font_fallback: String::new(),
             popup_width: default_w(),
             popup_height: default_h(),
         }

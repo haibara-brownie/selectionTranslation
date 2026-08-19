@@ -2,6 +2,7 @@
 
 mod autostart;
 mod config;
+mod fonts;
 mod llm;
 mod logging;
 mod popup;

@@ -278,7 +278,7 @@ fn open_settings(page: Option<&str>) {
 
 fn build(app: &adw::Application) -> Rc<Ui> {
     let cfg = Config::load();
-    crate::theme::apply(&cfg.theme);
+    crate::theme::apply(&cfg);
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
