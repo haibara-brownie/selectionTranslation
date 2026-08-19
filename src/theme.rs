@@ -330,18 +330,23 @@ popover .search {{
 
 /* 弹层出现动画。GTK4 默认不给 popover 任何动画（GTK3 有，GTK4 去掉了），
    所以这里自己写一段：轻微下移 + 缩放 + 淡入。 */
-@keyframes st-popover-in {{
-  from {{
-    opacity: 0;
-    transform: translateY(-8px) scale(0.96);
-  }}
-  to {{
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }}
+@keyframes st-popover-in-a {{
+  from {{ opacity: 0; transform: translateY(-8px) scale(0.96); }}
+  to {{ opacity: 1; transform: translateY(0) scale(1); }}
 }}
-popover.background > contents {{
-  animation: st-popover-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+/* 和上面完全一样，只是名字不同。GTK 的 CSS 动画只在样式变化时才重新播放，
+   而 popover 的节点是复用的 —— 第二次打开样式没变，动画就不播了。
+   所以每次 map 时在 a / b 两个类之间来回切，让 animation-name 真的变化。 */
+@keyframes st-popover-in-b {{
+  from {{ opacity: 0; transform: translateY(-8px) scale(0.96); }}
+  to {{ opacity: 1; transform: translateY(0) scale(1); }}
+}}
+popover.background > contents,
+popover.st-pop-a > contents {{
+  animation: st-popover-in-a 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}}
+popover.st-pop-b > contents {{
+  animation: st-popover-in-b 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }}
 /* 弹层里的条目依次淡入，鼠标扫过时更有层次 */
 popover listview > row {{
@@ -404,6 +409,34 @@ dropdown > button:active {{
         green = f.green,
         yellow = f.yellow,
     )
+}
+
+/// 给控件树里所有 popover 装上"每次打开都重播动画"的钩子。
+///
+/// 窗口建好后调一次即可；popover 是懒创建的，所以窗口 map 之后再补一次。
+pub fn hook_popover_animations(root: &impl IsA<gtk::Widget>) {
+    fn walk(w: &gtk::Widget) {
+        if let Some(p) = w.downcast_ref::<gtk::Popover>() {
+            if !p.has_css_class("st-pop-a") && !p.has_css_class("st-pop-b") {
+                p.add_css_class("st-pop-a");
+                p.connect_map(|p| {
+                    if p.has_css_class("st-pop-a") {
+                        p.remove_css_class("st-pop-a");
+                        p.add_css_class("st-pop-b");
+                    } else {
+                        p.remove_css_class("st-pop-b");
+                        p.add_css_class("st-pop-a");
+                    }
+                });
+            }
+        }
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            walk(&child);
+            c = child.next_sibling();
+        }
+    }
+    walk(root.as_ref());
 }
 
 thread_local! {

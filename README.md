@@ -139,7 +139,7 @@ seltrans log -f                    # 跟踪运行日志
 
 ### 字体
 
-「通用 → 字体」有三档，都是带搜索的下拉（系统上几百个字体家族，不搜没法选）：
+「通用 → 字体」有三档，都是带搜索的下拉（系统上几百个字体家族，不搜没法选）。搜索是**子串匹配**，搜 `maple` 能搜到 `JetBrains Maple Mono`：
 
 | 档位 | 管什么 |
 |---|---|
@@ -231,6 +231,10 @@ Wayland 下拿不到全局光标坐标，这是没法绕开的。弹窗固定在
 GTK4 的 popover **默认没有任何出现动画**（GTK3 有，GTK4 去掉了），得自己写 `@keyframes`。
 
 CssProvider 默认静默忽略解析错误，接上 `parsing-error` 信号写进日志，才不会改坏了自己不知道。
+
+**CSS 动画只在样式变化时重播**，而 popover 的节点是复用的 —— 第二次打开样式没变就不播了。解法是准备两套一模一样、只是名字不同的 `@keyframes`，每次 `map` 时在两个类之间来回切，强制 `animation-name` 变化。
+
+**下拉搜索默认是前缀匹配**，`GtkDropDown` / `AdwComboRow` 的 `search-match-mode` 要显式设成 `Substring`（该属性需要 libadwaita 1.6+）。
 </details>
 
 ---

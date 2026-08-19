@@ -424,6 +424,8 @@ fn build(app: &adw::Application) -> Rc<Ui> {
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&content));
     window.set_content(Some(&toolbar));
+    crate::theme::hook_popover_animations(&window);
+    window.connect_map(|w| crate::theme::hook_popover_animations(w));
 
     let ui = Rc::new(Ui {
         window: window.clone(),

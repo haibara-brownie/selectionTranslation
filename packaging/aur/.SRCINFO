@@ -8,7 +8,7 @@ pkgbase = seltrans
 	license = MIT
 	makedepends = cargo
 	depends = gtk4
-	depends = libadwaita
+	depends = libadwaita>=1.7
 	depends = wl-clipboard
 	depends = gcc-libs
 	depends = glibc

@@ -411,6 +411,8 @@ fn font_combo(families: &[String], current: &str, title: &str, subtitle: &str) -
         .model(&gtk::StringList::new(&items))
         .expression(&expr)
         .enable_search(true)
+        // 默认是前缀匹配，搜 "maple" 就找不到 "JetBrains Maple"。改成子串匹配。
+        .search_match_mode(gtk::StringFilterMatchMode::Substring)
         .build();
 
     let idx = if current.trim().is_empty() {
@@ -881,6 +883,7 @@ fn edit_provider(st: &Rc<St>, id: Option<String>) {
         }
     });
 
+    crate::theme::hook_popover_animations(&dialog);
     dialog.present(Some(&st.window));
 }
 
@@ -969,6 +972,7 @@ fn pick_model(
     dialog.set_child(Some(&toolbar));
 
     let _ = st;
+    crate::theme::hook_popover_animations(&dialog);
     dialog.present(Some(parent));
 }
 
@@ -1240,6 +1244,7 @@ fn edit_prompt(st: &Rc<St>, id: Option<String>) {
         }
     });
 
+    crate::theme::hook_popover_animations(&dialog);
     dialog.present(Some(&st.window));
 }
 
@@ -1351,6 +1356,9 @@ fn build(app: &adw::Application, page: Option<&str>) {
         .build();
 
     let stack = adw::ViewStack::new();
+    // 切页面时淡入淡出，不是硬切
+    stack.set_enable_transitions(true);
+    stack.set_transition_duration(200);
     let toasts = adw::ToastOverlay::new();
     toasts.set_child(Some(&stack));
 
@@ -1405,6 +1413,8 @@ fn build(app: &adw::Application, page: Option<&str>) {
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&toasts));
     window.set_content(Some(&toolbar));
+    crate::theme::hook_popover_animations(&window);
+    window.connect_map(|w| crate::theme::hook_popover_animations(w));
 
     if let Some(name) = page {
         stack.set_visible_child_name(name);
