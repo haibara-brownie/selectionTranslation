@@ -12,9 +12,14 @@ use seltrans_core::typography::{font_css, is_cjk};
 /// 从生成的 CSS 里把 `unicode-range` 的区间解析回来。
 /// 刻意不复用实现里的常量 —— 走一遍文本才能发现「表改了但 CSS 没跟上」。
 fn ranges_in(css: &str) -> Vec<(u32, u32)> {
+    parse_ranges(css)
+}
+
+/// 从一段含 `unicode-range:` 的 CSS 里解析出区间列表
+fn parse_ranges(css: &str) -> Vec<(u32, u32)> {
     let start = css
         .find("unicode-range:")
-        .expect("CSS 里没有 unicode-range");
+        .expect("这段 CSS 里没有 unicode-range");
     let body = &css[start + "unicode-range:".len()..];
     let body = &body[..body.find(';').expect("unicode-range 没有以分号结束")];
 
@@ -79,22 +84,67 @@ fn css_区间与_is_cjk_不许漂移() {
     }
 }
 
-/// 中文档排在字体栈最前，拉丁档跟在后面且不受区间限制
+/// 字体栈的次序：中文档 → 拉丁档 → 后备档 → 通用族。
+/// 中文档排不到最前，它的区间限制就没有意义了。
 #[test]
-fn 中文档排在拉丁档前面() {
+fn 字体栈按中文档拉丁档后备档排序() {
     let css = font_css("JetBrains Maple Mono", "Noto Serif CJK SC", "Noto Sans");
     let stack = stack_of(&css);
 
     let cjk = stack.find("st-cjk").expect("字体栈里没有中文档");
-    let latin = stack
-        .find("JetBrains Maple Mono")
-        .expect("字体栈里没有拉丁档");
+    let latin = stack.find("st-latin").expect("字体栈里没有拉丁档");
     let fallback = stack.find("Noto Sans").expect("字体栈里没有后备档");
-    assert!(
-        cjk < latin,
-        "中文档必须排在拉丁档之前，否则区间限制没有意义"
-    );
+    assert!(cjk < latin, "中文档必须排在拉丁档之前");
     assert!(latin < fallback);
+
+    // 两个内部壳各自指向用户填的真字体
+    assert!(css.contains("local(\"Noto Serif CJK SC\")"));
+    assert!(css.contains("local(\"JetBrains Maple Mono\")"));
+}
+
+/// 拉丁档也必须被挡在汉字区之外。
+///
+/// 只限制中文档是不够的：`unicode-range` 只决定「哪个字体有资格参与」，
+/// 被选中的字体真缺字形时，浏览器会**继续往后回退** —— 下一档正是拉丁字体，
+/// 于是自带汉字的 Maple 又赢了，绕一圈回到原来的 bug。
+///
+/// 真实触发场景：用户把中文字体填成 "HarmonyOS Sans"（纯拉丁族，没有汉字，
+/// 带汉字的是 "HarmonyOS Sans SC"）。
+#[test]
+fn 拉丁档不许参与汉字区() {
+    let css = font_css("JetBrains Maple Mono", "看不见的中文字体", "");
+    let latin = face_ranges(&css, "st-latin").expect("没有生成拉丁档的 @font-face");
+
+    for c in ['汉', '字', '，', 'あ', '한', 'Ａ'] {
+        assert!(
+            !in_ranges(&latin, c),
+            "{c} 落在拉丁档的区间里，中文字体缺字形时会被它接管"
+        );
+    }
+    for c in ['A', 'z', '0', ',', 'Я', 'Ω', '€'] {
+        assert!(!is_cjk(c) && in_ranges(&latin, c), "{c} 应由拉丁档负责");
+    }
+}
+
+/// 汉字最终得有个真能渲染的兜底：两档都缺字形时要落到通用族，
+/// 由系统的字体配置给一个真有汉字的字体，而不是显示成豆腐块。
+#[test]
+fn 字体栈以通用族收尾() {
+    let stack = stack_of(&font_css("Maple", "思源宋", "某个后备"));
+    let last = stack.rsplit(',').next().unwrap().trim();
+    assert!(
+        last == "sans-serif" || last == "serif" || last == "system-ui",
+        "字体栈应以通用族收尾，实际结尾是 {last}"
+    );
+}
+
+/// 取出指定 `@font-face` 的 unicode-range。没有该 face 时返回 None。
+fn face_ranges(css: &str, family: &str) -> Option<Vec<(u32, u32)>> {
+    let needle = format!("font-family: \"{family}\"");
+    let at = css.find(&needle)?;
+    let rest = &css[at..];
+    let end = rest.find('}')?;
+    Some(parse_ranges(&rest[..end]))
 }
 
 /// 取出 `--st-font:` 那一行的值
@@ -104,12 +154,16 @@ fn stack_of(css: &str) -> String {
     body[..body.find(';').expect("--st-font 没有以分号结束")].to_string()
 }
 
-/// 没设中文字体时不能发空的 `local()` —— 那会让整条 @font-face 失效
+/// 用户只配了拉丁字体时，就让它管全部字符。
+///
+/// 它自带汉字这时候是好事 —— 用户没表达过"汉字要用别的字体"的意思，
+/// 这时候去限制它反而会把汉字推给通用族，等于替用户做了没被授权的决定。
+/// 顺带：空的 `local()` 会让整条 @font-face 失效，所以也不能发。
 #[test]
-fn 中文档留空则不发_font_face() {
+fn 没设中文字体时拉丁档不受限制() {
     let css = font_css("JetBrains Maple Mono", "", "");
-    assert!(!css.contains("@font-face"), "中文档为空时不该有 @font-face");
-    assert!(stack_of(&css).contains("JetBrains Maple Mono"));
+    assert!(!css.contains("@font-face"), "只有一档时不该有 @font-face");
+    assert!(stack_of(&css).contains("\"JetBrains Maple Mono\""));
 }
 
 #[test]

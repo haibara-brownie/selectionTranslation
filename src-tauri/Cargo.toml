@@ -1,0 +1,30 @@
+[package]
+name = "seltrans-tauri"
+version.workspace = true
+edition.workspace = true
+description = "划词翻译 —— Tauri 界面层"
+
+# 二进制名跟 GTK 版错开，两版共存到 P5 切换为止。
+# 现在装到 ~/.local/bin 的还是 GTK 版，别覆盖用户日常在用的东西。
+[[bin]]
+name = "seltrans-tauri"
+path = "src/main.rs"
+
+[dependencies]
+seltrans-core = { path = "../crates/seltrans-core" }
+
+tauri = { version = "2.11.5", features = [] }
+tauri-plugin-clipboard-manager = "2.3.2"
+tauri-plugin-opener = "2.5.4"
+
+async-channel = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# 只为了设 Wayland 的 app-id（见 main.rs 里 set_wayland_app_id 的注释）。
+# 版本跟 tao 用的那个 glib 对齐，免得同时链两份。
+[target.'cfg(target_os = "linux")'.dependencies]
+glib = "0.18"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }

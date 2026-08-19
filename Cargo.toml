@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/seltrans-core"]
+members = ["crates/seltrans-core", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

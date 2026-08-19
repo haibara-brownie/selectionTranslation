@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>划词翻译</title>
+    <link rel="stylesheet" href="./style.css" />
+    <!-- 调色板与字体分档由 Rust 生成后注入，见 popup.ts -->
+    <style id="theme"></style>
+  </head>
+  <body>
+    <div class="shell">
+      <!-- 顶栏：整条都可拖动窗口，按钮除外 -->
+      <header class="topbar" data-tauri-drag-region>
+        <button id="retranslate" class="icon-btn" title="重新翻译（Ctrl+Enter）">↻</button>
+
+        <div class="spacer"></div>
+
+        <label class="select-wrap chip" title="翻译风格">
+          <select id="prompt"></select>
+        </label>
+
+        <div class="spacer"></div>
+
+        <button id="copy" class="icon-btn" title="复制译文（Ctrl+C）">⧉</button>
+        <button id="settings" class="icon-btn" title="设置">⚙</button>
+        <button id="close" class="icon-btn danger" title="关闭（Esc）">✕</button>
+      </header>
+
+      <main class="content">
+        <div class="section-head">
+          <span class="section-title">原文</span>
+          <span id="src-count" class="count"></span>
+        </div>
+        <div class="card">
+          <textarea
+            id="source"
+            spellcheck="false"
+            placeholder="在这里输入或粘贴要翻译的内容，Ctrl+Enter 翻译"
+          ></textarea>
+        </div>
+
+        <div class="section-head">
+          <span class="section-title">译文</span>
+          <span id="spinner" class="spinner" hidden></span>
+        </div>
+        <div class="card grow">
+          <div id="output" class="output"></div>
+        </div>
+      </main>
+
+      <footer class="statusbar">
+        <label class="select-wrap chip" title="模型">
+          <select id="model"></select>
+        </label>
+        <span id="status" class="status"></span>
+      </footer>
+    </div>
+
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>

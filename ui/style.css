@@ -1,0 +1,299 @@
+/* 弹窗样式。
+ *
+ * 配色变量（--ctp-*）和字体分档（--st-font）都是 Rust 在运行时注入 <style id="theme"> 的，
+ * 见 seltrans_core::palette / typography。这里只用变量，不写死任何色值 ——
+ * 写死一个，切主题时就会有一处对不上。
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  /* 窗口是无边框透明的，圆角要靠这里露出来 */
+  background: transparent;
+  font-family: var(--st-font, system-ui, sans-serif);
+  font-size: 14px;
+  color: var(--ctp-text);
+  /* 弹窗是临时窗口，选中文字只该发生在原文/译文里 */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--ctp-base);
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* ---------- 顶栏 ---------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--ctp-mantle);
+  /* 不画分隔线 —— GTK 版当初那条线就是被嫌"不协调"去掉的，底色差已经够分区了 */
+}
+
+.spacer {
+  flex: 1;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ctp-subtext0);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.icon-btn:hover {
+  background: var(--ctp-surface0);
+  color: var(--ctp-text);
+}
+
+.icon-btn:active {
+  background: var(--ctp-surface1);
+}
+
+.icon-btn.danger:hover {
+  background: var(--ctp-red);
+  color: var(--ctp-base);
+}
+
+/* ---------- 下拉 ---------- */
+
+/* 原生 <select> 的弹层由系统画，配色跟不上主题；但换成自绘弹层就要自己处理
+ * 键盘导航、滚动、边缘避让。P1 先用原生的，靠 color-scheme 让它跟着明暗走。 */
+.select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.select-wrap::after {
+  content: "▾";
+  position: absolute;
+  right: 9px;
+  font-size: 10px;
+  color: var(--ctp-subtext0);
+  pointer-events: none;
+}
+
+.chip select {
+  appearance: none;
+  max-width: 260px;
+  padding: 5px 26px 5px 12px;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 9px;
+  background: var(--ctp-surface0);
+  color: var(--ctp-text);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.chip select:hover {
+  background: var(--ctp-surface1);
+}
+
+.chip select:focus-visible {
+  outline: none;
+  border-color: var(--ctp-blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ctp-blue) 30%, transparent);
+}
+
+/* ---------- 正文 ---------- */
+
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  padding: 4px 14px 10px;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 2px 4px;
+}
+
+.section-title {
+  color: var(--ctp-subtext0);
+  font-size: 0.85em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.count {
+  margin-left: auto;
+  color: var(--ctp-overlay1);
+  font-size: 0.82em;
+}
+
+.card {
+  display: flex;
+  min-height: 62px;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 12px;
+  background: var(--ctp-surface0);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.card.grow {
+  flex: 1;
+  min-height: 0;
+}
+
+.card:focus-within {
+  border-color: var(--ctp-blue);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ctp-blue) 35%, transparent);
+}
+
+#source,
+.output {
+  flex: 1;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.6;
+  color: var(--ctp-text);
+  /* 这两块是内容区，允许选中 */
+  user-select: text;
+  -webkit-user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#source {
+  border: none;
+  background: transparent;
+  resize: none;
+  outline: none;
+}
+
+#source::placeholder {
+  color: var(--ctp-overlay0);
+}
+
+.output:empty::before {
+  content: "译文会出现在这里";
+  color: var(--ctp-overlay0);
+}
+
+.output.error {
+  color: var(--ctp-red);
+}
+
+/* 光标：流式输出时跟在末尾闪烁，让人知道还在写 */
+.output.streaming::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--ctp-blue);
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------- 底栏 ---------- */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 12px;
+}
+
+.status {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--ctp-overlay1);
+  font-size: 0.88em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.status.error {
+  color: var(--ctp-red);
+}
+
+/* ---------- 转圈 ---------- */
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--ctp-blue) 30%, transparent);
+  border-top-color: var(--ctp-blue);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 滚动条 ---------- */
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background: var(--ctp-surface2);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ctp-overlay0);
+  background-clip: content-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

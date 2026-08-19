@@ -9,6 +9,7 @@ pub mod llm;
 pub mod logging;
 pub mod palette;
 pub mod presets;
+pub mod selection;
 pub mod typography;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

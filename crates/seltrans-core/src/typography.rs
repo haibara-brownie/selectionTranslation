@@ -38,8 +38,51 @@ pub fn is_cjk(c: char) -> bool {
     CJK_RANGES.iter().any(|&(a, b)| v >= a && v <= b)
 }
 
-/// CSS 里 `@font-face` 用的内部字体名。用户看不到，只是给中文档一个能加区间限制的壳。
+/// Unicode 的最大码位
+const MAX_CODEPOINT: u32 = 0x10FFFF;
+
+/// `CJK_RANGES` 在整个 Unicode 上的补集 —— 拉丁档只在这些区间里参与。
+///
+/// 由那张表算出来而不是另抄一份，两边才不会漂移。
+fn non_cjk_ranges() -> Vec<(u32, u32)> {
+    let mut out = Vec::new();
+    let mut cursor = 0u32;
+    // CJK_RANGES 按码位升序排列且互不重叠，直接顺着扫
+    for &(a, b) in CJK_RANGES {
+        if cursor < a {
+            out.push((cursor, a - 1));
+        }
+        cursor = b + 1;
+    }
+    if cursor <= MAX_CODEPOINT {
+        out.push((cursor, MAX_CODEPOINT));
+    }
+    out
+}
+
+/// CSS 里 `@font-face` 用的内部字体名。用户看不到，只是给各档一个能加区间限制的壳。
 const CJK_FACE: &str = "st-cjk";
+const LATIN_FACE: &str = "st-latin";
+
+fn range_list(ranges: &[(u32, u32)]) -> String {
+    ranges
+        .iter()
+        .map(|&(a, b)| format!("U+{a:04X}-{b:04X}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn font_face(family: &str, local: &str, ranges: &[(u32, u32)]) -> String {
+    format!(
+        "@font-face {{\n  \
+           font-family: \"{family}\";\n  \
+           src: local({});\n  \
+           unicode-range: {};\n\
+         }}\n\n",
+        quote(local),
+        range_list(ranges)
+    )
+}
 
 /// 字体名是用户填的，直接插进 CSS 会被引号截断 —— 剔掉引号和反斜杠再包引号。
 fn quote(name: &str) -> String {
@@ -56,35 +99,40 @@ fn quote(name: &str) -> String {
 /// 三档都可以留空。中文档留空时不发 `@font-face` —— 空的 `local()` 会让整条规则失效。
 pub fn font_css(latin: &str, cjk: &str, fallback: &str) -> String {
     let mut css = String::new();
-    let cjk = cjk.trim();
-
+    let (latin, cjk, fallback) = (latin.trim(), cjk.trim(), fallback.trim());
     let mut stack: Vec<String> = Vec::new();
 
+    // 中文档：只在汉字区参与，排最前
     if !cjk.is_empty() {
-        let ranges: Vec<String> = CJK_RANGES
-            .iter()
-            .map(|&(a, b)| format!("U+{a:04X}-{b:04X}"))
-            .collect();
-        let _ = write!(
-            css,
-            "@font-face {{\n  \
-               font-family: \"{CJK_FACE}\";\n  \
-               src: local({});\n  \
-               unicode-range: {};\n\
-             }}\n\n",
-            quote(cjk),
-            ranges.join(", ")
-        );
-        // 排最前：它带区间限制，只会在汉字上命中，拉丁字符自然落到下一档
+        let _ = write!(css, "{}", font_face(CJK_FACE, cjk, CJK_RANGES));
         stack.push(format!("\"{CJK_FACE}\""));
     }
 
-    for name in [latin, fallback] {
-        if !name.trim().is_empty() {
-            stack.push(quote(name));
+    if !latin.is_empty() {
+        if cjk.is_empty() {
+            // 用户只配了拉丁字体，那就让它管全部字符 —— 它自带汉字是好事，
+            // 这时候去限制它反而会把汉字推给通用族，不是用户想要的。
+            stack.push(quote(latin));
+        } else {
+            // 配了中文字体，拉丁档就要反过来**只在汉字区以外**参与。
+            //
+            // 光限制中文档是不够的 —— `unicode-range` 只决定"哪个字体有资格参与"，
+            // 被选中的字体真缺字形时浏览器会继续往后回退，下一档正是拉丁字体，
+            // 于是自带汉字的等宽字体又赢了，绕一圈回到原来的 bug。
+            // 真实触发场景：用户把中文字体填成 "HarmonyOS Sans"（纯拉丁族，
+            // 带汉字的是 "HarmonyOS Sans SC"）。
+            //
+            // 两档都挡住之后，汉字最终落到末尾的通用族，由系统字体配置兜底 ——
+            // 不见得漂亮，但至少是真的汉字，不是豆腐块。
+            let _ = write!(css, "{}", font_face(LATIN_FACE, latin, &non_cjk_ranges()));
+            stack.push(format!("\"{LATIN_FACE}\""));
         }
     }
-    // 兜底，免得三档都空时字体栈是空的
+
+    if !fallback.is_empty() {
+        stack.push(quote(fallback));
+    }
+    // 收尾的通用族：三档都空时字体栈不至于是空的，汉字也总有人管
     stack.push("system-ui".into());
     stack.push("sans-serif".into());
 
