@@ -41,3 +41,93 @@ pub fn css_family(cfg: &Config) -> Option<String> {
         Some(list.join(", "))
     }
 }
+
+/// 这个字体家族自己有没有汉字字形。
+///
+/// 办法是让 Pango 用指定字体排一个「汉」字，再看它实际挑中的家族是不是同一个 ——
+/// 如果字体没有该字形，Pango 会回退到别的字体，家族名就对不上了。
+pub fn covers_cjk(family: &str) -> bool {
+    if family.trim().is_empty() {
+        return false;
+    }
+    let label = gtk::Label::new(None);
+    let ctx = label.pango_context();
+    let layout = gtk::pango::Layout::new(&ctx);
+    layout.set_font_description(Some(&gtk::pango::FontDescription::from_string(family)));
+    layout.set_text("汉");
+
+    let mut iter = layout.iter();
+    let Some(run) = iter.run_readonly() else {
+        return false;
+    };
+    let actual = run.item().analysis().font().describe().family();
+    actual
+        .map(|a| a.eq_ignore_ascii_case(family))
+        .unwrap_or(false)
+}
+
+/// 汉字、假名、谚文、全角标点这些该用「中文字体」那一档的字符
+fn is_cjk(c: char) -> bool {
+    matches!(c as u32,
+        0x1100..=0x11FF     // 谚文字母
+        | 0x2E80..=0x303F   // 部首扩展、康熙部首、中日韩符号和标点
+        | 0x3040..=0x30FF   // 平假名、片假名
+        | 0x3100..=0x312F   // 注音
+        | 0x3130..=0x318F   // 谚文兼容字母
+        | 0x31C0..=0x31EF   // 笔画
+        | 0x3200..=0x9FFF   // 带圈字符、中日韩统一表意文字
+        | 0xA960..=0xA97F
+        | 0xAC00..=0xD7FF   // 谚文音节
+        | 0xF900..=0xFAFF   // 兼容表意文字
+        | 0xFE30..=0xFE4F   // 中日韩兼容形式
+        | 0xFF00..=0xFFEF   // 全角字符
+        | 0x20000..=0x3FFFF // 扩展 B 及以后
+    )
+}
+
+/// 给缓冲区里的汉字范围打上「用中文字体」的标记。
+///
+/// 为什么需要这一步：CSS 的 font-family 是**逐字符**回退的，第一个有该字形的字体就赢了。
+/// 而像 JetBrains Maple Mono 这种字体自带汉字，选它当拉丁字体就会把「中文字体」那档
+/// 彻底架空。所以译文和原文区直接按字符脚本指定，不靠回退顺序猜。
+///
+/// `from` 是起始字符偏移，流式追加时只处理新插入的部分。
+pub fn tag_cjk(buffer: &gtk::TextBuffer, cjk_family: &str, from: i32) {
+    let table = buffer.tag_table();
+    let tag = match table.lookup("st-cjk") {
+        Some(t) => t,
+        None => {
+            let t = gtk::TextTag::new(Some("st-cjk"));
+            table.add(&t);
+            t
+        }
+    };
+
+    let family = cjk_family.trim();
+    if family.is_empty() {
+        // 没设中文字体就把标记清掉，交回给 CSS 的回退链
+        tag.set_family(None);
+        buffer.remove_tag(&tag, &buffer.start_iter(), &buffer.end_iter());
+        return;
+    }
+    tag.set_family(Some(family));
+
+    let start = buffer.iter_at_offset(from);
+    let text = buffer.text(&start, &buffer.end_iter(), false);
+
+    let mut run_start: Option<i32> = None;
+    let mut off = from;
+    for ch in text.chars() {
+        if is_cjk(ch) {
+            if run_start.is_none() {
+                run_start = Some(off);
+            }
+        } else if let Some(s) = run_start.take() {
+            buffer.apply_tag(&tag, &buffer.iter_at_offset(s), &buffer.iter_at_offset(off));
+        }
+        off += 1;
+    }
+    if let Some(s) = run_start {
+        buffer.apply_tag(&tag, &buffer.iter_at_offset(s), &buffer.iter_at_offset(off));
+    }
+}

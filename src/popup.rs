@@ -40,14 +40,24 @@ impl Ui {
         self.out_view.buffer()
     }
 
+    /// 当前配置里的中文字体
+    fn cjk_font(&self) -> String {
+        self.cfg.borrow().font_cjk.clone()
+    }
+
     fn set_output(&self, text: &str) {
-        self.out_buffer().set_text(text);
+        let buf = self.out_buffer();
+        buf.set_text(text);
+        crate::fonts::tag_cjk(&buf, &self.cjk_font(), 0);
     }
 
     fn append_output(&self, text: &str) {
         let buf = self.out_buffer();
+        // 流式追加，只给新插入的这一段打标记
+        let from = buf.end_iter().offset();
         let mut end = buf.end_iter();
         buf.insert(&mut end, text);
+        crate::fonts::tag_cjk(&buf, &self.cjk_font(), from);
         let mut end = buf.end_iter();
         self.out_view.scroll_to_iter(&mut end, 0.0, false, 0.0, 0.0);
     }
@@ -59,7 +69,9 @@ impl Ui {
     }
 
     fn set_input(&self, text: &str) {
-        self.src_view.buffer().set_text(text);
+        let buf = self.src_view.buffer();
+        buf.set_text(text);
+        crate::fonts::tag_cjk(&buf, &self.cjk_font(), 0);
     }
 
     /// 卡片右上角显示字数，取词取空时不用看日志就能发现
@@ -534,7 +546,10 @@ fn build(app: &adw::Application) -> Rc<Ui> {
     // 输入框内容变了就更新标题上的字数
     src_view.buffer().connect_changed({
         let ui = ui.clone();
-        move |_| ui.sync_input_label()
+        move |buf| {
+            ui.sync_input_label();
+            crate::fonts::tag_cjk(buf, &ui.cjk_font(), 0);
+        }
     });
 
     // 快捷键：Esc 关闭、Ctrl+Enter / F5 翻译、Ctrl+Shift+C 复制

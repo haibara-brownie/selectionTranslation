@@ -215,34 +215,48 @@ fn build_general(st: &Rc<St>) -> adw::PreferencesPage {
     let g_font = adw::PreferencesGroup::builder()
         .title("字体")
         .description(
-            "按拉丁 → 中文 → 后备的顺序回退：拉丁字体通常没有汉字字形，\
-             遇到汉字自然落到中文字体。三档都选「系统默认」就完全不干预。",
+            "原文和译文区按字符脚本直接分配：汉字一定用中文字体，其余按 \
+             拉丁 → 中文 → 后备 的顺序回退。所以拉丁字体自带汉字也不影响。\
+             三档都选「系统默认」就完全不干预。",
         )
         .build();
 
+    // 拉丁字体那档要提示"这个字体自带汉字"—— 界面文字仍按回退顺序走，
+    // 只有原文 / 译文区是按脚本强制分配的
+    fn latin_subtitle(family: &str) -> String {
+        if fonts::covers_cjk(family) {
+            format!("英文、数字、代码 · 注意：{family} 自带汉字，界面文字的汉字会用它")
+        } else {
+            "英文、数字、代码".to_string()
+        }
+    }
+
     let families = fonts::families();
-    for (title, subtitle, getter, setter) in [
+    for (title, subtitle, is_latin, getter, setter) in [
         (
             "拉丁字体",
-            "英文、数字、代码",
+            latin_subtitle(&st.cfg.borrow().font_latin),
+            true,
             Box::new(|c: &Config| c.font_latin.clone()) as Box<dyn Fn(&Config) -> String>,
             Box::new(|c: &mut Config, v: String| c.font_latin = v)
                 as Box<dyn Fn(&mut Config, String)>,
         ),
         (
             "中文字体",
-            "汉字、中文标点",
+            "汉字、中文标点、假名、谚文".to_string(),
+            false,
             Box::new(|c: &Config| c.font_cjk.clone()),
             Box::new(|c: &mut Config, v: String| c.font_cjk = v),
         ),
         (
             "后备字体",
-            "前两档都没有的字形，比如 emoji、日文假名、西里尔字母",
+            "前两档都没有的字形，比如 emoji、西里尔字母".to_string(),
+            false,
             Box::new(|c: &Config| c.font_fallback.clone()),
             Box::new(|c: &mut Config, v: String| c.font_fallback = v),
         ),
     ] {
-        let row = font_combo(&families, &getter(&st.cfg.borrow()), title, subtitle);
+        let row = font_combo(&families, &getter(&st.cfg.borrow()), title, &subtitle);
         row.connect_selected_notify({
             let st = st.clone();
             let families = families.clone();
@@ -254,6 +268,9 @@ fn build_general(st: &Rc<St>) -> adw::PreferencesPage {
                 } else {
                     families.get(i - 1).cloned().unwrap_or_default()
                 };
+                if is_latin {
+                    c.set_subtitle(&latin_subtitle(&value));
+                }
                 setter(&mut st.cfg.borrow_mut(), value);
                 st.save();
                 theme::apply(&st.cfg.borrow());
