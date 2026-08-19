@@ -242,6 +242,7 @@ src/
 ├── main.rs         CLI 分发：popup / tray / settings / translate / log / autostart
 ├── config.rs       配置读写（原子写 + 0600）
 ├── logging.rs      日志、文本预览、零宽字符判空
+├── fonts.rs        字体家族枚举 + font-family 生成
 ├── presets.rs      供应商预设 + 目标语言列表 + 七条内置提示词
 ├── selection.rs    取词：主选区 / 模拟 Ctrl+C / 修饰键守卫 / 依赖自检
 ├── llm.rs          OpenAI 兼容与 Anthropic 两套流式后端
