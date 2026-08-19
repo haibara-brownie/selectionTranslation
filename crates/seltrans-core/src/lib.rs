@@ -7,7 +7,9 @@
 pub mod config;
 pub mod llm;
 pub mod logging;
+pub mod palette;
 pub mod presets;
+pub mod typography;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const REPO_URL: &str = "https://github.com/haibara-brownie/selectionTranslation";

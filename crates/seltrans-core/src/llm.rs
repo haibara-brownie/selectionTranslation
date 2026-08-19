@@ -155,7 +155,7 @@ fn precheck(p: &Provider) -> Result<(), String> {
 }
 
 /// 从一行 SSE `data:` 里抽出增量文本。返回 Err 表示服务端回了 error 事件。
-fn extract_delta(p: &Provider, j: &Value) -> Result<Option<String>, String> {
+fn extract_delta(anthropic: bool, j: &Value) -> Result<Option<String>, String> {
     if let Some(err) = j.get("error") {
         let msg = err
             .get("message")
@@ -165,7 +165,7 @@ fn extract_delta(p: &Provider, j: &Value) -> Result<Option<String>, String> {
         return Err(msg);
     }
 
-    if p.is_anthropic() {
+    if anthropic {
         if j.get("type").and_then(Value::as_str) == Some("content_block_delta") {
             let d = &j["delta"];
             if d.get("type").and_then(Value::as_str) == Some("text_delta") {
@@ -180,6 +180,79 @@ fn extract_delta(p: &Provider, j: &Value) -> Result<Option<String>, String> {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
             .map(str::to_string))
+    }
+}
+
+/// SSE 流解码器：喂字节分片，吐翻译事件。
+///
+/// 独立出来有两个原因：
+/// 1. **正确性** —— 服务端不保证按字符边界切分片，一个汉字被拦腰切开时若直接把分片
+///    转成字符串就会变成替换字符。所以必须缓冲到换行符再解，这段逻辑值得单独测。
+/// 2. **可测** —— 脱开 HTTP 客户端就能拿字面量喂进来验行为。
+pub struct SseDecoder {
+    buf: Vec<u8>,
+    anthropic: bool,
+    /// 收到 `[DONE]` 或 error 之后就不再吐事件了
+    finished: bool,
+}
+
+impl SseDecoder {
+    pub fn new(anthropic: bool) -> Self {
+        Self {
+            buf: Vec::new(),
+            anthropic,
+            finished: false,
+        }
+    }
+
+    /// 至今为止有没有解出过正文。用来区分「翻完了」和「服务端一个字都没回」。
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    /// 喂一段字节，返回这一段解出的事件（可能为空）。
+    pub fn push(&mut self, chunk: &[u8]) -> Vec<Event> {
+        let mut out = Vec::new();
+        if self.finished {
+            return out;
+        }
+        self.buf.extend_from_slice(chunk);
+
+        // 只按 \n 切：切出来的每一段都是完整的行，多字节字符不会被截断
+        while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
+            let raw: Vec<u8> = self.buf.drain(..=pos).collect();
+            let line = String::from_utf8_lossy(&raw);
+            let line = line.trim();
+
+            // 空行是 SSE 的事件分隔，冒号开头是注释（心跳）
+            if line.is_empty() || line.starts_with(':') {
+                continue;
+            }
+            // event: / id: 之类的字段用不上 —— JSON 体里自己带 type
+            let Some(data) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data == "[DONE]" {
+                self.finished = true;
+                out.push(Event::Done);
+                return out;
+            }
+            let Ok(j) = serde_json::from_str::<Value>(data) else {
+                continue;
+            };
+
+            match extract_delta(self.anthropic, &j) {
+                Err(e) => {
+                    self.finished = true;
+                    out.push(Event::Error(e));
+                    return out;
+                }
+                Ok(Some(text)) => out.push(Event::Delta(text)),
+                Ok(None) => {}
+            }
+        }
+        out
     }
 }
 
@@ -242,9 +315,7 @@ pub async fn stream_translate(
     }
 
     let mut stream = resp.bytes_stream();
-    // 按字节缓冲再按行切，避免在多字节 UTF-8 中间截断（中文会变乱码）
-    let mut buf: Vec<u8> = Vec::new();
-    let mut got_any = false;
+    let mut decoder = SseDecoder::new(p.is_anthropic());
     let mut total_chars = 0usize;
 
     while let Some(item) = stream.next().await {
@@ -255,49 +326,25 @@ pub async fn stream_translate(
                 return;
             }
         };
-        buf.extend_from_slice(&chunk);
 
-        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
-            let raw: Vec<u8> = buf.drain(..=pos).collect();
-            let line = String::from_utf8_lossy(&raw);
-            let line = line.trim();
-
-            if line.is_empty() || line.starts_with(':') {
-                continue;
+        for ev in decoder.push(&chunk) {
+            match &ev {
+                Event::Delta(text) => total_chars += text.chars().count(),
+                Event::Done => logging::info(&format!("翻译完成，共 {total_chars} 字符")),
+                Event::Error(e) => logging::error(&format!("服务端返回 error 事件：{e}")),
             }
-            let Some(data) = line.strip_prefix("data:") else {
-                continue; // event: / id: 之类的字段，JSON 里也带 type，不用管
-            };
-            let data = data.trim();
-            if data == "[DONE]" {
-                logging::info(&format!("翻译完成，共 {total_chars} 字符"));
-                let _ = tx.send(Event::Done).await;
+            if tx.send(ev).await.is_err() {
+                logging::info("窗口已关闭，中止流式接收");
                 return;
             }
-            let Ok(j) = serde_json::from_str::<Value>(data) else {
-                continue;
-            };
-
-            match extract_delta(&p, &j) {
-                Err(e) => {
-                    logging::error(&format!("服务端返回 error 事件：{e}"));
-                    let _ = tx.send(Event::Error(e)).await;
-                    return;
-                }
-                Ok(Some(text)) => {
-                    got_any = true;
-                    total_chars += text.chars().count();
-                    if tx.send(Event::Delta(text)).await.is_err() {
-                        logging::info("窗口已关闭，中止流式接收");
-                        return; // 窗口关了
-                    }
-                }
-                Ok(None) => {}
-            }
+        }
+        if decoder.is_finished() {
+            return;
         }
     }
 
-    if !got_any {
+    // 流断了但没收到 [DONE]：只要吐过正文就当正常结束，一个字都没有才算异常
+    if total_chars == 0 {
         let msg = "服务端没有返回任何内容。检查模型名是否正确、账户是否还有额度".to_string();
         logging::error(&msg);
         let _ = tx.send(Event::Error(msg)).await;
