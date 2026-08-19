@@ -246,29 +246,30 @@ headerbar {{
 }}
 .st-status {{
   color: {overlay1};
-  font-size: 0.82em;
+  font-size: 0.88em;
 }}
 
-/* 底部的供应商 / 模型：次要信息，压低存在感。
-   GtkDropDown 内部还套着一个 button，flat 类穿不透，得直接选中它 */
+/* 底部的供应商 / 模型选择器：常用控件，得看得清也点得着，
+   所以用跟卡片一样的 surface0 底 + surface1 描边，但比顶栏那个主控件收敛一点。
+   注意 GtkDropDown 内部还套着一个 button，flat 类穿不透，CSS 得直接选中它。 */
 .st-chip,
 .st-chip > button {{
   min-height: 0;
-  font-size: 0.82em;
 }}
 .st-chip > button {{
-  background: none;
+  background-color: {surface0};
   background-image: none;
   box-shadow: none;
-  border: none;
-  color: {subtext0};
-  padding: 2px 6px;
+  border: 1px solid {surface1};
+  border-radius: 9px;
+  color: {text};
+  padding: 5px 12px;
 }}
 .st-chip > button:hover {{
-  background-color: {surface0};
+  background-color: {surface1};
 }}
 .st-chip > button > * {{
-  color: {subtext0};
+  color: {text};
 }}
 
 /* ---- 下拉弹层 ----
@@ -414,6 +415,12 @@ dropdown > button:active {{
 /// 给控件树里所有 popover 装上"每次打开都重播动画"的钩子。
 ///
 /// 窗口建好后调一次即可；popover 是懒创建的，所以窗口 map 之后再补一次。
+/// 窗口 / 对话框建好后统一挂钩：弹层动画 + 界面文字按脚本分配字体。
+pub fn hook_widgets(root: &impl IsA<gtk::Widget>) {
+    hook_popover_animations(root);
+    crate::fonts::hook_ui_script_fonts(root);
+}
+
 pub fn hook_popover_animations(root: &impl IsA<gtk::Widget>) {
     fn walk(w: &gtk::Widget) {
         if let Some(p) = w.downcast_ref::<gtk::Popover>() {
@@ -478,6 +485,7 @@ fn load(f: &Flavor, font_family: Option<&str>) {
 /// 选「跟随系统」时会盯着 libadwaita 的深浅色状态，系统切换时自动跟着换。
 pub fn apply(cfg: &crate::config::Config) {
     let mgr = adw::StyleManager::default();
+    crate::fonts::set_current_cjk(&cfg.font_cjk);
     let font = crate::fonts::css_family(cfg);
     let font = font.as_deref();
 

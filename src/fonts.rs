@@ -131,3 +131,82 @@ pub fn tag_cjk(buffer: &gtk::TextBuffer, cjk_family: &str, from: i32) {
         buffer.apply_tag(&tag, &buffer.iter_at_offset(s), &buffer.iter_at_offset(off));
     }
 }
+
+thread_local! {
+    /// 当前的中文字体。放这里是为了让控件的回调不用每次去读配置文件。
+    static CURRENT_CJK: std::cell::RefCell<String> =
+        const { std::cell::RefCell::new(String::new()) };
+}
+
+pub fn set_current_cjk(family: &str) {
+    CURRENT_CJK.with(|c| *c.borrow_mut() = family.to_string());
+}
+
+pub fn current_cjk() -> String {
+    CURRENT_CJK.with(|c| c.borrow().clone())
+}
+
+/// 给一段文本按脚本生成 Pango 属性：只把汉字区段指定成中文字体，其余不动。
+fn cjk_attrs(text: &str, family: &str) -> Option<gtk::pango::AttrList> {
+    if family.trim().is_empty() || text.is_empty() {
+        return None;
+    }
+    let list = gtk::pango::AttrList::new();
+    let mut any = false;
+    let mut push = |start: usize, end: usize| {
+        let mut a = gtk::pango::AttrString::new_family(family);
+        a.set_start_index(start as u32);
+        a.set_end_index(end as u32);
+        list.insert(a);
+    };
+
+    // Pango 属性的索引是**字节**偏移，不是字符
+    let mut run: Option<usize> = None;
+    for (idx, ch) in text.char_indices() {
+        if is_cjk(ch) {
+            if run.is_none() {
+                run = Some(idx);
+            }
+        } else if let Some(s) = run.take() {
+            push(s, idx);
+            any = true;
+        }
+    }
+    if let Some(s) = run {
+        push(s, text.len());
+        any = true;
+    }
+
+    if any { Some(list) } else { None }
+}
+
+fn apply_to_label(label: &gtk::Label) {
+    let family = current_cjk();
+    let text = label.text().to_string();
+    label.set_attributes(cjk_attrs(&text, &family).as_ref());
+}
+
+/// 让界面文字也按字符脚本走字体，而不是只靠 CSS 的回退链。
+///
+/// CSS 没法按脚本拆，所以只能逐个 Label 挂 Pango 属性。文字会变的 Label
+/// （字数、状态栏之类）还要跟着 notify::label 重新算。
+///
+/// 和 popover 动画钩子一样：建窗口时调一次，窗口 map 后补一次，
+/// 列表重建和对话框弹出时再调。用 CSS 类当"已挂钩"标记，避免重复连接。
+pub fn hook_ui_script_fonts(root: &impl IsA<gtk::Widget>) {
+    fn walk(w: &gtk::Widget) {
+        if let Some(l) = w.downcast_ref::<gtk::Label>() {
+            apply_to_label(l);
+            if !l.has_css_class("st-fonted") {
+                l.add_css_class("st-fonted");
+                l.connect_label_notify(apply_to_label);
+            }
+        }
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            walk(&child);
+            c = child.next_sibling();
+        }
+    }
+    walk(root.as_ref());
+}
