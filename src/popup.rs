@@ -360,7 +360,7 @@ fn build(app: &adw::Application) -> Rc<Ui> {
     let out_head = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
         .spacing(8)
-        .margin_top(4)
+        .margin_top(10)
         .build();
     let out_title = gtk::Label::builder().label("译文").xalign(0.0).build();
     out_title.add_css_class("st-section");
@@ -376,9 +376,9 @@ fn build(app: &adw::Application) -> Rc<Ui> {
 
     let content = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
-        .spacing(6)
-        .margin_top(12)
-        .margin_bottom(10)
+        .spacing(5)
+        .margin_top(10)
+        .margin_bottom(14)
         .margin_start(14)
         .margin_end(14)
         .build();
@@ -400,20 +400,21 @@ fn build(app: &adw::Application) -> Rc<Ui> {
     let bottom = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
         .spacing(6)
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(14)
-        .margin_end(14)
+        .margin_top(12)
         .build();
+    // 底部这两个是"当前用什么"的次要信息，做成扁平的，别跟正文抢注意力
+    provider_dd.add_css_class("flat");
+    provider_dd.add_css_class("st-chip");
+    model_dd.add_css_class("flat");
+    model_dd.add_css_class("st-chip");
     bottom.append(&provider_dd);
     bottom.append(&model_dd);
     bottom.append(&status);
-    bottom.add_css_class("st-bottom");
+    content.append(&bottom);
 
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&content));
-    toolbar.add_bottom_bar(&bottom);
     window.set_content(Some(&toolbar));
 
     let ui = Rc::new(Ui {

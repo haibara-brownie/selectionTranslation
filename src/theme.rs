@@ -189,7 +189,8 @@ window, .background {{
 headerbar {{
   background-color: {mantle};
   color: {text};
-  box-shadow: inset 0 -1px {surface0};
+  box-shadow: none;
+  border: none;
 }}
 
 /* 原文输入框 / 译文框：明确画出边界 */
@@ -231,9 +232,27 @@ headerbar {{
   color: {overlay1};
   font-size: 0.82em;
 }}
-.st-bottom {{
-  background-color: {mantle};
-  box-shadow: inset 0 1px {surface0};
+
+/* 底部的供应商 / 模型：次要信息，压低存在感。
+   GtkDropDown 内部还套着一个 button，flat 类穿不透，得直接选中它 */
+.st-chip,
+.st-chip > button {{
+  min-height: 0;
+  font-size: 0.82em;
+}}
+.st-chip > button {{
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+  color: {subtext0};
+  padding: 2px 6px;
+}}
+.st-chip > button:hover {{
+  background-color: {surface0};
+}}
+.st-chip > button > * {{
+  color: {subtext0};
 }}
 "#,
         base = f.base,
