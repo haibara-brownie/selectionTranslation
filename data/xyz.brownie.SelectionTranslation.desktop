@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=划词翻译
+Name[en]=Selection Translation
+GenericName=Translation
+Comment=Wayland / niri 下的全局划词翻译，可切换提示词与大模型
+Comment[en]=Global selection translation for Wayland / niri
+Exec=seltrans settings
+Icon=accessories-dictionary
+Terminal=false
+Categories=Utility;Translation;
+Keywords=translate;translation;划词;翻译;seltrans;
+StartupNotify=false
+StartupWMClass=xyz.brownie.SelectionTranslation.Settings
+Actions=Translate;
+
+[Desktop Action Translate]
+Name=翻译当前选中的文本
+Exec=seltrans popup

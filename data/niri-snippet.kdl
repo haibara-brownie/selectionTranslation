@@ -1,0 +1,28 @@
+// selectionTranslation —— 快捷键与窗口规则
+//
+// install.sh 会把这个文件复制到 ~/.config/niri/selectiontranslation.kdl，
+// 并在 ~/.config/niri/config.kdl 末尾追加一行 include "selectiontranslation.kdl"。
+//
+// 手动安装的话，把上面两步自己做一遍即可。niri 会自动热重载，不用重启。
+
+binds {
+    Mod+Shift+T hotkey-overlay-title="划词翻译 Translate Selection" { spawn "seltrans" "popup"; }
+    Mod+Alt+T   hotkey-overlay-title="翻译设置 Translation Settings" { spawn "seltrans" "settings"; }
+}
+
+// 翻译弹窗：浮动在右上角，不打断当前的平铺布局
+window-rule {
+    match app-id="xyz.brownie.SelectionTranslation.Popup"
+    open-floating true
+    default-column-width { fixed 560; }
+    default-window-height { fixed 480; }
+    default-floating-position x=16 y=16 relative-to="top-right"
+}
+
+// 配置界面：浮动，居中
+window-rule {
+    match app-id="xyz.brownie.SelectionTranslation.Settings"
+    open-floating true
+    default-column-width { fixed 900; }
+    default-window-height { fixed 700; }
+}
