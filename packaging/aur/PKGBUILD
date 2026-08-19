@@ -1,4 +1,21 @@
 # Maintainer: haibarabrownie <haibarabrownie@gmail.com>
+#
+# ⚠ 这份打的是 **GTK4 版**（仓库根 package `seltrans`）。
+#
+# 项目正在往 Tauri 2 迁移，迁移期两版共存：GTK 版是现在日常在用、功能完整的那个，
+# Tauri 版（package `seltrans-tauri`）还在补功能。**现在故意不动这个包的结构**，
+# 理由和切换清单见 packaging/aur/README.md 的「迁移期怎么办」。
+#
+# 等 Tauri 版功能追平（迁移方案的 P5）再照下面这份清单改，改完记得重新生成 .SRCINFO：
+#
+#   depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator'
+#            'wl-clipboard' 'gcc-libs' 'glibc')
+#   makedepends=('cargo' 'nodejs' 'pnpm')
+#   # build() 里要先 `pnpm install --frozen-lockfile`，再 `pnpm tauri build`；
+#   # 装的二进制是 target/release/seltrans-tauri，不是 target/release/seltrans。
+#   # 注意 AUR 不允许构建期联网，pnpm 依赖得走 source=() 预下载或 offline 镜像，
+#   # 这条是切换时最大的一块工作量。
+#
 pkgname=seltrans
 pkgver=0.1.0
 pkgrel=1
@@ -11,6 +28,9 @@ makedepends=('cargo')
 # !lto：makepkg 默认往 CFLAGS 里加 -flto=auto，会把 aws-lc-sys（rustls 的加密后端）
 #       的 C 目标文件编成 LLVM bitcode，Rust 链接时找不到符号而失败。
 # !debug：release profile 里已经开了 strip，再出一个 -debug 包是空的。
+#
+# !lto 在切到 Tauri 版之后**同样不能去掉**：aws-lc-sys 还是 rustls 的加密后端，
+# 换 UI 层不影响这条。
 options=('!lto' '!debug')
 optdepends=(
   'ydotool: 主选区取不到词时模拟 Ctrl+C 兜底'

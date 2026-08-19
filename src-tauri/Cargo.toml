@@ -13,18 +13,49 @@ path = "src/main.rs"
 [dependencies]
 seltrans-core = { path = "../crates/seltrans-core" }
 
+# tray-icon 特性只在非 Linux 那一段打开（见下），Linux 用 ksni，
+# 不该把 appindicator 链进来
 tauri = { version = "2.11.5", features = [] }
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-opener = "2.5.4"
+tauri-plugin-autostart = "2.5.1"
+
+# 单实例：Wayland 下应用注册不了全局快捷键，只能由合成器 spawn 我们。
+# 第二个进程起来后把 argv 递给常驻实例，省掉一次冷启动，弹窗几乎瞬间出来。
+tauri-plugin-single-instance = "2.4.3"
 
 async-channel = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# headless 的 translate 要在 core 的运行时上 spawn 流式任务
+tokio = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
 # 只为了设 Wayland 的 app-id（见 main.rs 里 set_wayland_app_id 的注释）。
 # 版本跟 tao 用的那个 glib 对齐，免得同时链两份。
-[target.'cfg(target_os = "linux")'.dependencies]
 glib = "0.18"
+
+# 托盘图标兜底目录。跟 core 一样不手写 XDG。
+dirs = "6.0"
+
+# Linux 的托盘不用 Tauri 内置那套（appindicator，Wayland 下图标常年不显示），
+# 继续用纯 D-Bus 的 ksni。详细理由见 src/tray.rs 的模块头。
+ksni = "0.3.6"
+
+# 把内置 SVG 光栅化成 SNI 要的位图。关掉默认特性是为了甩掉 text / system-fonts
+# 那一串字体依赖 —— 我们的图标里没有 <text>。tiny_skia 由 resvg 转出来，不用单列。
+resvg = { version = "0.48.1", default-features = false }
+
+# mac / Windows 才用 Tauri 内置托盘：那两个平台上它没有 Linux 那些毛病。
+# tray-icon 只在这里打开，Linux 构建根本不会链进 appindicator。
+# image-png 是为了把 icons/32x32.png 读成 tauri::image::Image。
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tauri = { version = "2.11.5", features = ["tray-icon", "image-png"] }
+
+# 全局快捷键也只有非 Linux 才用得上：Wayland 没有对应协议，这个插件在 Wayland 下
+# 注册会「成功」但回调永不触发（tauri#3578）。Linux 那边由合成器 spawn 我们。
+# 只在这段引入，Linux 构建连这个 crate 都不会编。
+tauri-plugin-global-shortcut = "2.3.2"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }

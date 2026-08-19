@@ -92,6 +92,16 @@ seltrans autostart on|off          # 开关开机自启
 seltrans log -f                    # 跟踪运行日志
 ```
 
+迁移中的 Tauri 版是另一个二进制，子命令基本一致：
+
+```bash
+seltrans-tauri popup [--text ...] [--input]
+seltrans-tauri settings [general|providers|prompts|about]
+seltrans-tauri tray
+```
+
+两个二进制**共用同一份配置和日志**，可以随时来回切。
+
 ---
 
 ## 配置
@@ -278,15 +288,24 @@ src/                          界面层 ①：GTK4 / libadwaita（当前可用�
 ├── tray.rs         StatusNotifierItem 托盘
 └── autostart.rs    ~/.config/autostart 里的 desktop 文件读写
 
-src-tauri/src/                界面层 ②：Tauri 2（迁移中，只有弹窗）
-├── main.rs         CLI 分流 + 窗口创建 + Wayland app-id
-├── cmds.rs         前端能调的命令（薄搬运层，不放业务逻辑）
-└── state.rs        首屏状态打包
+src-tauri/src/                界面层 ②：Tauri 2（迁移中）
+├── main.rs         CLI 分流 + 插件注册 + Wayland app-id
+├── windows.rs      窗口创建与复用、取词时序
+├── cmds.rs         弹窗用的命令（薄搬运层，不放业务逻辑）
+├── settings_cmds.rs 设置页用的命令
+├── state.rs        首屏状态打包
+└── tray.rs         托盘：Linux 走 ksni，mac/Win 走 Tauri 内置
 
 ui/                           Tauri 的前端（Vite + TypeScript，无框架）
-├── index.html      弹窗版面
-├── popup.ts        渲染与交互
-└── style.css       只用 CSS 变量，不写死任何色值
+├── index.html / popup.ts     翻译弹窗
+├── settings.html / settings.ts  设置窗口外壳
+├── settings/                 四个页面各一个模块
+│   └── general | providers | prompts | about
+├── lib/
+│   ├── dom.ts      控件词汇（命名对齐 libadwaita）
+│   ├── api.ts      Rust 命令的类型化封装
+│   └── shell.ts    配置的单一副本、模态框、状态栏
+└── style.css / settings.css  只用 CSS 变量，不写死任何色值
 ```
 
 往 core 里加东西之前先问一句：**这段代码在 mac 和 Windows 上还成立吗？**
@@ -307,13 +326,56 @@ pnpm install && pnpm tauri dev           # 跑 Tauri 版（会同时起 vite）
 
 技术栈：Rust 2024 + GTK4 / libadwaita（`gtk4` 0.11、`libadwaita` 0.9）+ Tauri 2.11、tokio、reqwest（rustls）、ksni（托盘）、jiff（时间戳）；前端 Vite 7 + TypeScript，不上框架。无数据库，配置落 XDG 目录。
 
-### Tauri 版的已知限制（迁移中）
+### 迁移进度
 
-- 只有弹窗。设置页、托盘、开机自启还得用 `seltrans` 那个二进制。
-- 全局快捷键在 Linux 上**只能**由合成器 spawn（Wayland 没有对应协议，Tauri 的
-  global-shortcut 插件在 Wayland 下注册会"成功"但回调永不触发）。mac / Windows 上
-  才用得了插件。
-- 窗口浮动位置靠 niri 的窗口规则，按 app-id + 标题匹配，见 `data/niri-snippet.kdl`。
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| P0 | 抽出 `seltrans-core`，核心逻辑与 GUI 解耦 | 完成 |
+| P1 | Tauri 骨架 + 翻译弹窗 | 完成 |
+| P2 | 设置界面四页搬到 Tauri | 完成 |
+| P3 | mac / Windows 取词、托盘、自启、单实例 | 代码完成，**mac/Win 未经真机验证** |
+| P4 | 三平台打包 CI | 配置完成，**未跑过一次真实 CI** |
+| P5 | 删掉 GTK 版 | **未做**，等 Tauri 版在日常使用中站住脚 |
+
+两套界面目前并存：`seltrans`（GTK4，日常在用）和 `seltrans-tauri`（迁移中）。
+切换之前会给 GTK 版打 tag 留退路。
+
+### Tauri 版的已知限制
+
+- **全局快捷键在 Linux 上只能由合成器提供**。Wayland 没有对应协议，Tauri 的
+  global-shortcut 插件在 Wayland 下注册会"成功"但回调永不触发（上游长期未决）。
+  所以走的是「合成器 spawn 一个新进程 → 单实例插件把 argv 递给常驻实例」这条路，
+  实测第二个进程 0.055 秒就退出。mac / Windows 上才用得了插件。
+- **窗口位置由合成器决定**。Wayland 下客户端没权限摆自己，靠 niri 的窗口规则按
+  app-id + 标题匹配，见 `data/niri-snippet.kdl`。
+- **Linux 托盘用 ksni 而不是 Tauri 内置那套**。内置的依赖 libayatana-appindicator，
+  且有已知问题（Wayland 下 .deb 和 dev 模式图标不显示，只有 AppImage 正常）。
+- **mac / Windows 的取词没有真机验证过**。代码写完了、类型检查过了，但模拟按键、
+  辅助功能授权、剪贴板还原这些必须实机试。首次使用请留意
+  `docs/发版.md` 里列出的待验证项。
+- mac 的托盘图标不是模板图标（现有图标是彩色的，切成单色会变成两坨黑块），
+  需要另配一张单色图。
+
+### mac / Windows 上的注意事项
+
+**安装包没有签名。** 没有 Apple 开发者账号（$99/年）就没法公证，Windows 也没有代码
+签名证书。所以：
+
+- **macOS**：首次打开会说「无法打开，因为无法验证开发者」。右键点图标 →「打开」，
+  或者 `xattr -dr com.apple.quarantine /Applications/seltrans.app`
+- **Windows**：SmartScreen 会拦一次，点「更多信息」→「仍要运行」
+
+**取词的平台限制：**
+
+| 平台 | 限制 |
+|---|---|
+| macOS | 需要「辅助功能」授权（系统设置 → 隐私与安全性 → 辅助功能）。从终端跑裸二进制时被授权的是终端，装成 .app 后要重新勾一次 |
+| Windows | **UIPI 挡住提权窗口** —— 目标程序以管理员身份运行时取不到词，这是系统安全设计，只能让 seltrans 也以管理员身份运行 |
+| Windows | 传统控制台（cmd / PowerShell 的 conhost）里 Ctrl+C 是中断信号不是复制，那类窗口取不到词。Windows Terminal 没这个问题 |
+
+**剪贴板只还原纯文本。** 走模拟复制那条兜底路径时会临时改写剪贴板再还原，但原本
+是图片、富文本、文件列表的话还不回去（会变成空）。三个平台都是这样，是已知取舍。
+不想冒这个险就把取词方式设成「仅主选区」（只有 Linux 有）。
 
 ## 许可
 

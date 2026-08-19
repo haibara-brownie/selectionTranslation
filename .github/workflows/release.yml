@@ -1,0 +1,198 @@
+# 发版打包：推 v* tag 触发，三平台各打一份包，挂到同一个 GitHub Release 上。
+#
+# 为什么是 matrix 而不是一台机器全包了：tauri build 不能交叉编译
+# （每个平台的打包器都是原生的——Linux 的 appimage/dpkg/rpmbuild、
+# macOS 的 hdiutil、Windows 的 WiX/NSIS），必须各平台各跑一次。
+#
+# Release 建成**草稿**，CI 只负责传产物，发不发由人点。
+name: 发版打包
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# tauri-action 要往 Release 上传资产
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── 先把草稿 Release 建出来 ──────────────────────────────────────────────
+  # 不让三个 build job 各自去建：它们同时起跑，会撞成三个重复 Release。
+  # 这里建一次拿到 release id，下面统统往这个 id 上传。
+  create-release:
+    name: 建 Release 草稿
+    runs-on: ubuntu-24.04
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+    steps:
+      - name: 建草稿
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # 重跑 workflow 时草稿已经在了，别重复建。
+          # 注意：草稿 Release 没有真实 tag，GET /releases/tags/{tag} 查不到它，
+          # 只能列出来自己筛。
+          release_id=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" \
+            --jq 'map(select(.tag_name == env.TAG)) | .[0].id // empty')
+
+          if [ -n "${release_id}" ]; then
+            echo "已存在 Release ${release_id}，复用"
+          else
+            cat > /tmp/release-notes.md <<'NOTES'
+          ## 装哪个
+
+          | 平台 | 文件 |
+          |---|---|
+          | Debian / Ubuntu | `.deb` |
+          | Fedora / openSUSE | `.rpm` |
+          | 其他 Linux 发行版 | `.AppImage`（`chmod +x` 后直接运行） |
+          | macOS（Intel 和 Apple Silicon 通用） | `.dmg` |
+          | Windows | `.msi`，或 `-setup.exe`（NSIS） |
+
+          Arch Linux 走 AUR 装，别用这里的包。
+
+          Linux 的 `.deb` / `.rpm` / `.AppImage` 在 Ubuntu 24.04 上构建，需要
+          glibc 2.39 或更新。更老的发行版请自行从源码编译。
+
+          ## 这些包没有代码签名
+
+          本项目没有 Apple 开发者账号（99 美元/年），也没有 Windows 代码签名证书，
+          所以产物是未签名的，两家系统都会拦。**这是预期行为，不是包坏了。**
+
+          **macOS** —— 首次打开提示「无法打开，因为无法验证开发者」。二选一：
+
+          - 在访达里**右键**点 `seltrans.app` → 选「打开」→ 弹窗里再点一次「打开」
+          - 或者在终端里去掉隔离属性：
+
+            ```sh
+            xattr -dr com.apple.quarantine /Applications/seltrans.app
+            ```
+
+          **Windows** —— SmartScreen 弹「Windows 已保护你的电脑」。
+          点左下角的「更多信息」，再点「仍要运行」。
+
+          信不过就自己编译，构建脚本全在仓库的 `.github/workflows/release.yml` 里，
+          和这些产物是同一套。
+
+          ## 已知限制
+
+          - Linux 上全局快捷键必须由合成器触发（Wayland 没有全局快捷键协议），
+            配置方法见 README；macOS / Windows 上在设置里直接配。
+          - 兜底取词只还原纯文本剪贴板，富文本和图片还不回去。
+          NOTES
+
+            release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases" \
+              -f tag_name="${TAG}" \
+              -f name="seltrans ${TAG}" \
+              -F draft=true \
+              -F prerelease=false \
+              -f body="$(cat /tmp/release-notes.md)" \
+              --jq '.id')
+            echo "新建 Release ${release_id}"
+          fi
+
+          echo "release_id=${release_id}" >> "${GITHUB_OUTPUT}"
+
+  # ── 三平台各打一份 ──────────────────────────────────────────────────────
+  build:
+    name: 打包 ${{ matrix.label }}
+    needs: create-release
+    strategy:
+      # 一个平台挂了，另外两个继续跑完，好一次看清都坏在哪
+      fail-fast: false
+      matrix:
+        include:
+          # ubuntu-24.04 而不是 ubuntu-latest：latest 标签会随 GitHub 迁移漂移
+          # （现在指向 24.04，26.04 转正后会挪过去），发版产物的 glibc 基线
+          # 不能跟着漂。也不用 22.04——那个镜像 2026-09-17 起进入弃用期。
+          - platform: ubuntu-24.04
+            label: Linux（deb / rpm / AppImage）
+            args: ''
+            rust_targets: ''
+
+          # universal-apple-darwin 是 Tauri/cargo 认的伪目标：分别编 arm64 和
+          # x86_64，再用 lipo 合成一个通用二进制，打进同一个 .dmg。
+          # 前提是两个真实 target 都装好，见下面 rust_targets。
+          - platform: macos-latest
+            label: macOS（universal dmg）
+            args: '--target universal-apple-darwin'
+            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+
+          - platform: windows-latest
+            label: Windows（msi / NSIS exe）
+            args: ''
+            rust_targets: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # 只有 Linux 需要装系统库；mac 的 WKWebView 和 Windows 的 WebView2
+      # 都是系统自带（WebView2 从 Win11 起预装，Win10 由 NSIS/WiX 安装器负责引导）。
+      # 这份清单和 ci.yml 里那份保持一致，改一处记得改另一处；
+      # 每个包对应哪个 -sys crate 见 ci.yml 里的注释。
+      - name: 装系统依赖（仅 Linux）
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          # 三个平台的编译产物互不通用，按 runner 分桶
+          key: ${{ matrix.platform }}
+
+      # pnpm 要先于 setup-node，否则 setup-node 找不到 pnpm store。
+      # version 锁 11：pnpm-workspace.yaml 里的 allowBuilds 是 pnpm 11 才认的键，
+      # 装成 10 的话 esbuild 的安装脚本会被拦下，前端 vite build 直接失败。
+      - uses: pnpm/action-setup@v6.0.10
+        with:
+          version: 11
+          cache: true
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+
+      - name: 装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      # 注意：tauri build 只编 src-tauri 这一个 package（cargo 在 src-tauri/
+      # 目录下跑，只构建当前包），所以 mac / Windows 上**不会**去碰仓库根的
+      # seltrans 包——那个是 GTK4 版，只有 Linux 编得动。
+      - name: tauri build
+        uses: tauri-apps/tauri-action@action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # rustls 的加密后端 aws-lc-sys 在 Windows x86_64 上要 NASM 汇编器，
+          # 而 windows runner 镜像里没装 NASM（CMake 有）。这个变量让它用
+          # crate 自带的预编译汇编对象，省掉一个外部依赖。
+          # 只对 x86_64 且未开 fips 有效，正好是我们的情况。
+          # 若哪天失效，改成加一步 ilammy/setup-nasm。
+          AWS_LC_SYS_PREBUILT_NASM: 1
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+          # 显式指定，免得 action 的包管理器探测猜成 npm
+          tauriScript: pnpm tauri
+          # 没配 updater（tauri.conf.json 里没有 createUpdaterArtifacts），
+          # 别让它生成空的 latest.json
+          uploadUpdaterJson: false

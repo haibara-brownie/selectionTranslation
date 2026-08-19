@@ -1,0 +1,136 @@
+# 日常检查：push 和 PR 都跑。
+#
+# 只在 Linux 上跑。mac / Windows 的编译验证放在 release.yml 里（打 tag 才跑）——
+# 那两家 runner 的计费倍率是 Linux 的 10 倍 / 2 倍，日常 push 没必要烧。
+# 代价是 mac / Windows 专属代码的编译错误要等发版才暴露；真要提前验，
+# 手动跑一次 release.yml 的 build job 即可。
+name: CI
+
+on:
+  push:
+    # 只列 branches 时，推 tag 不会触发这个 workflow——发版走 release.yml，
+    # 不用在这里重复编译一遍
+    branches: ['**']
+  pull_request:
+
+# 只读就够了，CI 不写任何东西
+permissions:
+  contents: read
+
+# 同一分支上新的 push 顶掉还在跑的旧任务
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── 主检查：seltrans-core + seltrans-tauri ────────────────────────────────
+  # 这是拦门的那道，跑在正式发布（GA）的 ubuntu-24.04 上，不用 preview 镜像。
+  check:
+    name: 检查（core + Tauri）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Tauri 在 Linux 上的编译期依赖。包名在 22.04 / 24.04 / 26.04 上是一致的
+      # （真正变过的是 20.04 的 libwebkit2gtk-4.0-dev → 22.04 起的 4.1，
+      # 我们已经在 4.1 这边）。对应关系是照着 Cargo.lock 里的 -sys crate 定的：
+      #   webkit2gtk + soup3      → libwebkit2gtk-4.1-dev（它自己拉 libsoup-3.0-dev）
+      #   gtk-sys（tao 用）        → libgtk-3-dev
+      #   libappindicator-sys     → libayatana-appindicator3-dev（这个 crate 认的是
+      #                             ayatana 那份 .pc，不是老的 libappindicator3-dev）
+      #   AppImage 打包            → librsvg2-dev、patchelf
+      # libxdo-dev 目前的依赖图里用不到，预防性装着：tray-icon 一旦开了 libxdo
+      # feature 就会去找 xdo.h，缺了报的错很不直观。
+      - name: 装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2.9.2
+
+      # pnpm 必须先于 setup-node 装好，cache 才找得到 store。
+      # version 必须锁 11：pnpm-workspace.yaml 用的是 pnpm 11 才认识的
+      # allowBuilds 键，装成 pnpm 10 的话这个键会被当成未知配置忽略，
+      # esbuild 的安装脚本被拦、vite build 直接报二进制缺失。
+      - uses: pnpm/action-setup@v6.0.10
+        with:
+          version: 11
+          cache: true
+
+      # 开发机上是 node 26，CI 取当前 LTS 的 24——前端只是 vanilla TS + Vite，
+      # 两个版本行为一致。真出现版本相关问题再往上抬。
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+
+      - name: 装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      # --all 不能省：仓库根 Cargo.toml 既是 workspace 根又是一个 package，
+      # 裸跑 `cargo fmt --check` 只作用于根包，其他 crate 会被静默跳过还报 ok。
+      - name: cargo fmt
+        run: cargo fmt --all --check
+
+      # 同理，--workspace 不能省。
+      #
+      # --exclude seltrans：根包是 GTK4 版，要求 gtk4 >= 4.18、libadwaita >= 1.7
+      # （Cargo.toml 里开了 feature v4_18 / v1_7），而 ubuntu-24.04 只有
+      # GTK 4.14 + libadwaita 1.5，system-deps 会直接判版本不足而失败。
+      # 根包的检查单独放到下面的 gtk job（ubuntu-26.04）上。
+      - name: cargo clippy
+        run: cargo clippy --workspace --exclude seltrans --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace --exclude seltrans
+
+      - name: pnpm build
+        run: pnpm build
+
+  # ── GTK4 版（仓库根 package seltrans）─────────────────────────────────────
+  # 单独一个 job，只因为 runner 镜像的 GTK 版本：
+  #   ubuntu-24.04 → GTK 4.14 / libadwaita 1.5   ✗ 不满足 v4_18 / v1_7
+  #   ubuntu-26.04 → GTK 4.22 / libadwaita 1.9   ✓
+  # ubuntu-26.04 目前还是 public preview 镜像。它要是抽风把 PR 全卡住，
+  # 临时在这个 job 上加一行 `continue-on-error: true` 就行。
+  #
+  # 迁移 P5 删掉 GTK 代码之后，整个 job 一起删。
+  gtk:
+    name: 检查（GTK4 版）
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: 装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev \
+            libadwaita-1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          # 和上面 check job 的编译产物不通用（不同 OS 镜像），分开存
+          key: gtk
+
+      - name: cargo build
+        run: cargo build -p seltrans
+
+      - name: cargo clippy
+        run: cargo clippy -p seltrans --all-targets -- -D warnings

@@ -7,35 +7,62 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cmds;
+mod headless;
+mod hotkey;
+mod settings_cmds;
 mod state;
+mod tray;
+mod windows;
 
-use tauri::{WebviewUrl, WebviewWindowBuilder};
-
-use seltrans_core::config::Config;
 use seltrans_core::logging;
+use windows::TranslateRequest;
 
-/// 命令行带进来的启动参数，前端起来后用 `launch_args` 命令取。
+/// 首次启动时前端要的东西，起来后用 `launch_args` 命令取。
 ///
 /// 之所以不走 URL 参数：待翻译的文本可能很长、可能带任意字符，塞进 URL 要转义两次，
 /// 出了问题极难排查。放在 Rust 侧让前端来取，文本原样不动。
-#[derive(Default, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LaunchArgs {
-    /// `--text` 指定的内容；为空表示要现场取词
-    pub text: Option<String>,
-    /// `--input`：不取词，直接聚焦输入框等用户敲
-    pub input_mode: bool,
-}
+///
+/// 里面的 `text` **已经是取好词的结果**（取词必须赶在窗口拿到焦点之前，见
+/// `windows::prepare`）。
+struct Launch(std::sync::Mutex<TranslateRequest>);
 
 #[tauri::command]
-fn launch_args(state: tauri::State<'_, LaunchArgs>) -> LaunchArgs {
-    state.inner().clone()
+fn launch_args(state: tauri::State<'_, Launch>) -> TranslateRequest {
+    state.0.lock().map(|g| g.clone()).unwrap_or_default()
+}
+
+/// 打开设置窗口。托盘菜单和弹窗里的齿轮按钮都走这个。
+#[tauri::command]
+fn open_settings(app: tauri::AppHandle, page: Option<String>) -> Result<(), String> {
+    windows::open_settings(&app, page.as_deref())
+        .map(|_| ())
+        .map_err(|e| format!("打不开设置窗口：{e}"))
 }
 
 /// 从参数里取 `--text` 的值
 fn arg_text(args: &[String]) -> Option<String> {
     let i = args.iter().position(|a| a == "--text" || a == "-t")?;
     args.get(i + 1).cloned()
+}
+
+/// 从一批命令行参数里解析出「用户想干什么」
+fn parse(args: &[String]) -> (String, TranslateRequest, Option<String>) {
+    let cmd = args
+        .get(1)
+        .map(String::as_str)
+        .unwrap_or("popup")
+        .to_string();
+    let page = args
+        .get(2)
+        .map(|s| s.trim_start_matches("--").to_string())
+        .filter(|s| matches!(s.as_str(), "general" | "providers" | "prompts" | "about"));
+    let req = TranslateRequest {
+        text: arg_text(args),
+        input_mode: args.iter().any(|a| a == "--input"),
+        // 取词还没做，在 windows::prepare 里填
+        error: None,
+    };
+    (cmd, req, page)
 }
 
 fn help() {
@@ -46,15 +73,23 @@ seltrans {ver} —— 划词翻译（Tauri 界面）
 用法：
   seltrans-tauri popup [--text <文本>]   取当前选中的文本并弹窗翻译
   seltrans-tauri popup --input           打开弹窗并聚焦输入框
+  seltrans-tauri settings [页面]         打开设置，页面可选 general/providers/prompts/about
+  seltrans-tauri tray                    常驻后台并在托盘显示图标
+  seltrans-tauri translate [--text <文本>]
+                                         在终端里翻译并打印结果，不开窗口
+  seltrans-tauri log [-f]                查看运行日志
   seltrans-tauri --version               显示版本
+
+translate 的输入优先级：--text > 管道输入 > 当前选中的文本
 
 配置文件：{cfg}
 日志文件：{log}
 
-注：设置页、托盘、开机自启还在 GTK 版里，用 `seltrans` 那个二进制。",
+全局快捷键：{hk}",
         ver = seltrans_core::VERSION,
         cfg = seltrans_core::config::config_path().display(),
         log = logging::log_path().display(),
+        hk = hotkey::describe(),
     );
 }
 
@@ -82,15 +117,21 @@ fn set_wayland_app_id(_id: &str) {}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let cmd = args.get(1).map(String::as_str).unwrap_or("popup");
+    let (cmd, req, page) = parse(&args);
 
     // 不需要窗口的子命令在这里就地了结。**必须赶在 Tauri 初始化之前** ——
-    // 将来接上 single-instance 插件后，进了 Tauri 的 argv 会被转交给常驻实例，
-    // 那时候 `--version` 这类一次性命令的行为就全错了。
-    match cmd {
+    // 进了 Tauri 的 argv 会被 single-instance 插件转交给常驻实例、本进程立刻退出，
+    // 那时候 `translate` 就变成「让常驻实例弹个窗口」而不是「在终端打印译文」。
+    match cmd.as_str() {
         "-h" | "--help" | "help" => return help(),
         "-V" | "--version" => return println!("seltrans {}", seltrans_core::VERSION),
         _ => {}
+    }
+    if matches!(cmd.as_str(), "translate" | "log" | "logs" | "autostart") {
+        logging::startup(&format!("tauri:{cmd}"));
+        if let Some(code) = headless::run(&cmd, &args) {
+            std::process::exit(code);
+        }
     }
 
     logging::startup(&format!("tauri:{cmd}"));
@@ -99,35 +140,89 @@ fn main() {
     let ctx = tauri::generate_context!();
     set_wayland_app_id(&ctx.config().identifier);
 
-    let launch = LaunchArgs {
-        text: arg_text(&args),
-        input_mode: args.iter().any(|a| a == "--input"),
+    // 托盘模式只常驻、不开窗口，等用户点图标或按快捷键
+    let tray_mode = matches!(cmd.as_str(), "tray" | "daemon");
+
+    // **取词赶在这里做**：Tauri 一旦起来、窗口一旦拿到焦点，模拟出来的复制键就
+    // 发给我们自己了。托盘模式不取词（没人在等结果）。
+    let req = if tray_mode || cmd == "settings" || cmd == "config" {
+        req
+    } else {
+        windows::prepare(req)
     };
-    let cfg = Config::load();
-    let (w, h) = (cfg.popup_width as f64, cfg.popup_height as f64);
+    let boot = (cmd.clone(), req.clone(), page);
 
     tauri::Builder::default()
+        // single-instance 必须第一个注册（官方要求）。第二个进程的 argv 会送到这里，
+        // 我们照常解析一遍再派活 —— 这就是 Wayland 下快捷键的通路：
+        // 合成器 spawn 一个新进程，它把意图递给常驻实例然后自己退出。
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let (cmd, req, page) = parse(&argv);
+            logging::info(&format!("常驻实例收到第二次启动：{cmd}"));
+            windows::dispatch(app, &cmd, req, page.as_deref());
+        }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(launch)
+        .plugin(tauri_plugin_autostart::init(
+            // Linux 用 XDG autostart 的 .desktop；mac 用 LaunchAgent；Windows 写注册表
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            // 自启起来的是常驻模式，不是弹窗
+            Some(vec!["tray"]),
+        ))
+        .manage(Launch(std::sync::Mutex::new(req)))
+        // 托盘模式常驻：关窗口只藏不销毁，下次按快捷键立刻就出来
+        .manage(windows::Resident(tray_mode))
         .invoke_handler(tauri::generate_handler![
             launch_args,
+            open_settings,
             cmds::load_state,
             cmds::grab_selection,
             cmds::translate,
             cmds::set_active_prompt,
             cmds::set_active_model,
+            settings_cmds::load_config,
+            settings_cmds::save_config,
+            settings_cmds::theme_css,
+            settings_cmds::theme_choices,
+            settings_cmds::list_fonts,
+            settings_cmds::font_covers_cjk,
+            settings_cmds::has_cjk,
+            settings_cmds::platform,
+            settings_cmds::provider_presets,
+            settings_cmds::prompt_presets,
+            settings_cmds::target_langs,
+            settings_cmds::list_models,
+            settings_cmds::test_connection,
+            settings_cmds::about_info,
+            settings_cmds::open_path,
+            settings_cmds::autostart_enabled,
+            settings_cmds::set_autostart,
         ])
         .setup(move |app| {
-            // 无边框 + 透明：顶栏是自己画的，圆角要靠透明背景才不会露出黑角。
-            // 窗口位置不在这里设 —— Wayland 下客户端根本没权限摆自己，
-            // 那是合成器的事（niri 的 window-rule 按 app-id 匹配）。
-            WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("index.html".into()))
-                .title("划词翻译")
-                .inner_size(w, h)
-                .decorations(false)
-                .transparent(true)
-                .build()?;
+            let handle = app.handle().clone();
+
+            if let Err(e) = tray::spawn(&handle) {
+                // 托盘起不来不该拖垮整个程序 —— 面板不支持 StatusNotifierItem 是常见情况
+                logging::warn(&format!("托盘启动失败（不影响翻译功能）：{e}"));
+            }
+            if let Err(e) = hotkey::register(&handle) {
+                // 快捷键被别的程序占了也不该拖垮程序，托盘和命令行还能用
+                logging::warn(&format!("{e}（托盘和命令行不受影响）"));
+            }
+
+            if !tray_mode {
+                let (cmd, req, page) = boot;
+                // 这一路的取词在进 Tauri 之前就做完了，别再 prepare 一次
+                let r = match cmd.as_str() {
+                    "settings" | "config" => {
+                        windows::open_settings(&handle, page.as_deref()).map(|_| ())
+                    }
+                    _ => windows::open_popup(&handle, req).map(|_| ()),
+                };
+                if let Err(e) = r {
+                    logging::error(&format!("打开窗口失败：{e}"));
+                }
+            }
             Ok(())
         })
         .run(ctx)
