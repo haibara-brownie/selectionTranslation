@@ -55,13 +55,42 @@ seltrans popup                     # 取词并弹窗（快捷键调用的就是�
 seltrans settings [页面]           # 配置界面，页面可选 general/providers/prompts/about
 seltrans translate --text "hello"  # 在终端里翻译，不开窗口
 echo "hello" | seltrans translate  # 也吃管道
+seltrans log -f                    # 跟踪运行日志
 ```
+
+## 日志
+
+niri 用 `spawn` 启动程序时 stderr 会进 niri 自己的日志，所以关键节点都落到自己的文件里：
+
+```
+~/.local/state/seltrans/seltrans.log
+```
+
+超过 1 MB 自动轮转成 `seltrans.log.1`。设 `SELTRANS_DEBUG=1` 可以同时打到 stderr。
+
+翻译结果不对时先看这一行：
+
+```
+21:15:56 [INFO] 发起翻译 | 供应商=DeepSeek kind=openai 模型=deepseek-v4-flash
+  端点=https://api.deepseek.com/v1/chat/completions | system=315 字符 | user=53 字符
+  | user 预览: The build failed because the lockfile is out of date.
+```
+
+`user 字符数` 和 `user 预览` 就是**真正发给模型的内容**。如果模型回你"请提供需要翻译的内容"，看这里立刻就知道是取词取空了还是别的问题。预览里会把肉眼看不见的字符标出来（`<ZWSP>`、`<BOM>`、`<NBSP>` 等）——网页上选到空行、图标字体时经常拿到一串零宽字符，看着像有内容其实什么都没有。这种情况程序会直接拦下不发请求。
+
+日志**不记录 API key**。
 
 ## 配置
 
 首次使用：`Mod+Alt+T` → 「供应商」页 → 点 **+** → 选一个预设（base_url 自动填好）→ 填 API key → 点「拉取列表」挑模型 → 点「测试连接」确认通了。
 
 配置存在 `~/.config/seltrans/config.json`，权限 `0600`（里面有 API key）。
+
+### 目标语言
+
+在「通用」页的下拉里选，内置 21 种主流大模型翻译质量都比较可靠的语种（简繁中英日韩、法德西葡意、俄乌荷波瑞土、阿拉伯、印地、泰、越、印尼）。选最后一项「自定义…」会露出输入框，可以填任何模型看得懂的语言名。
+
+存的是**语言名本身**而不是 ISO 代码 —— 它会直接替换掉提示词里的 `{target_lang}`，写「简体中文」比写 `zh-Hans` 稳定得多。
 
 ### 内置供应商预设
 
@@ -101,6 +130,8 @@ Wayland 没有 X11 那样的全局取词 API，所以分两条路：
 1. **主选区**（`wl-paste --primary`）—— 选中就生效，零侵入，不碰剪贴板。绝大多数 GTK / Qt / 终端应用都支持。
 2. **模拟 Ctrl+C**（ydotool）—— 主选区拿不到时的兜底。会先存下当前剪贴板内容，复制、读取，然后**还原回去**。
 
+第 2 条路有个必须处理的坑：快捷键是 `Mod+Shift+T`，程序跑起来那一刻你**手还按着 Super+Shift**，这时直接发 Ctrl+C，应用收到的其实是 `Super+Shift+Ctrl+C` —— 既复制不到东西，还可能让合成器的修饰键状态和物理按键脱节，表现就是**键盘像卡住了一样没法操作**。所以发 Ctrl+C 之前会先把左右 Ctrl / Shift / Alt / Super 全部显式抬起并等 120 ms，且用 RAII 守卫保证无论中途提前返回、panic 还是出错，退出时一定会再抬一次。
+
 取词方式在设置里可以锁死成其中一种。默认「自动」，即先试主选区，失败再兜底。
 
 弹窗固定在屏幕右上角，不跟随鼠标 —— Wayland 下拿不到全局光标坐标，这是没法绕开的取舍。位置和尺寸可以改 `~/.config/niri/selectiontranslation.kdl` 里的窗口规则。
@@ -111,8 +142,9 @@ Wayland 没有 X11 那样的全局取词 API，所以分两条路：
 src/
 ├── main.rs         CLI 分发：popup / settings / translate
 ├── config.rs       ~/.config/seltrans/config.json 读写（原子写 + 0600）
-├── presets.rs      供应商预设目录 + 七条内置提示词
-├── selection.rs    取词：主选区 / 模拟 Ctrl+C / 依赖自检
+├── logging.rs      日志、文本预览、零宽字符判空
+├── presets.rs      供应商预设目录 + 目标语言列表 + 七条内置提示词
+├── selection.rs    取词：主选区 / 模拟 Ctrl+C / 修饰键守卫 / 依赖自检
 ├── llm.rs          OpenAI 兼容与 Anthropic 两套流式后端
 ├── popup.rs        翻译弹窗
 └── settings_ui.rs  配置界面
@@ -125,8 +157,10 @@ data/
 
 界面「关于」页有依赖自检，会告诉你 wl-clipboard、ydotool 服务、niri 规则各自的状态。
 
+- **模型回"请提供需要翻译的内容"** —— 说明发出去的用户消息是空的。弹窗里的「原文」默认展开且带字数，先看那里；再看日志里「发起翻译」那行的 `user 字符数`。多半是取词取到了空行或一串零宽字符
 - **取不到词** —— 先确认按快捷键前文字确实选中着；某些 Electron / Java 应用不提供主选区，把取词方式改成「自动」或「仅模拟 Ctrl+C」
 - **模拟 Ctrl+C 无效** —— `systemctl --user status ydotool` 看服务在不在
+- **键盘像卡住了** —— 修饰键被卡在按下状态。手动解除：`ydotool key 29:0 97:0 42:0 54:0 56:0 100:0 125:0 126:0`
 - **快捷键没反应** —— `niri validate` 看配置有没有过；确认 `~/.local/bin` 在 PATH 里
 - **报 HTTP 401 / 404** —— 弹窗里会直接显示服务端返回的原文，多半是 key 错了或 base_url 少了 `/v1`
 

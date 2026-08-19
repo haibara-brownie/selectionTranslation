@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use crate::config::{Config, Prompt, Provider, new_id};
 use crate::presets::{PROVIDER_PRESETS, preset_by_id};
-use crate::{APP_ID_SETTINGS, REPO_URL, config, llm, presets, selection};
+use crate::{APP_ID_SETTINGS, REPO_URL, config, llm, logging, presets, selection};
 
 const SEL_MODES: [(&str, &str); 3] = [
     ("auto", "自动（主选区优先，取不到再模拟 Ctrl+C）"),
@@ -63,9 +63,55 @@ fn build_general(st: &Rc<St>) -> adw::PreferencesPage {
 
     let g1 = adw::PreferencesGroup::builder().title("翻译").build();
 
-    let lang = adw::EntryRow::builder().title("目标语言").build();
-    lang.set_text(&st.cfg.borrow().target_lang);
-    lang.connect_changed({
+    // 目标语言：下拉选常用语种，最后一项「自定义」才露出输入框
+    let mut labels: Vec<&str> = presets::TARGET_LANGS.iter().map(|(_, l)| *l).collect();
+    labels.push("自定义…");
+    let custom_index = (labels.len() - 1) as u32;
+
+    let lang_row = adw::ComboRow::builder()
+        .title("目标语言")
+        .subtitle("译文要输出成哪种语言")
+        .model(&gtk::StringList::new(&labels))
+        .build();
+
+    let custom_row = adw::EntryRow::builder()
+        .title("自定义语言（直接写模型看得懂的语言名）")
+        .build();
+
+    let current = st.cfg.borrow().target_lang.clone();
+    match presets::TARGET_LANGS.iter().position(|(v, _)| *v == current) {
+        Some(i) => {
+            lang_row.set_selected(i as u32);
+            custom_row.set_visible(false);
+        }
+        None => {
+            lang_row.set_selected(custom_index);
+            custom_row.set_text(&current);
+            custom_row.set_visible(true);
+        }
+    }
+
+    lang_row.connect_selected_notify({
+        let st = st.clone();
+        let custom_row = custom_row.clone();
+        move |c| {
+            let i = c.selected();
+            if i == custom_index {
+                custom_row.set_visible(true);
+                let v = custom_row.text().to_string();
+                if !v.trim().is_empty() {
+                    st.cfg.borrow_mut().target_lang = v;
+                    st.save();
+                }
+            } else if let Some((value, _)) = presets::TARGET_LANGS.get(i as usize) {
+                custom_row.set_visible(false);
+                st.cfg.borrow_mut().target_lang = value.to_string();
+                st.save();
+            }
+        }
+    });
+
+    custom_row.connect_changed({
         let st = st.clone();
         move |e| {
             let v = e.text().to_string();
@@ -75,7 +121,9 @@ fn build_general(st: &Rc<St>) -> adw::PreferencesPage {
             }
         }
     });
-    g1.add(&lang);
+
+    g1.add(&lang_row);
+    g1.add(&custom_row);
 
     st.prompt_combo.set_title("默认提示词");
     st.prompt_combo.connect_selected_notify({
@@ -1022,6 +1070,48 @@ fn build_about() -> adw::PreferencesPage {
             .build(),
     );
     page.add(&g);
+
+    let g_log = adw::PreferencesGroup::builder()
+        .title("运行日志")
+        .description(
+            "取词结果、实际发给模型的内容、服务端返回的状态都会记在这里。\
+             翻译结果不对时先看这个文件。超过 1MB 自动轮转。",
+        )
+        .build();
+    let log_row = adw::ActionRow::builder()
+        .title("日志文件")
+        .subtitle(logging::log_path().display().to_string())
+        .build();
+    let open_log = gtk::Button::builder()
+        .label("打开")
+        .valign(gtk::Align::Center)
+        .build();
+    open_log.connect_clicked(|_| {
+        let p = logging::log_path();
+        if !p.exists() {
+            let _ = std::fs::write(&p, "");
+        }
+        let _ = std::process::Command::new("xdg-open").arg(&p).spawn();
+    });
+    let copy_path = gtk::Button::builder()
+        .icon_name("edit-copy-symbolic")
+        .tooltip_text("复制路径")
+        .valign(gtk::Align::Center)
+        .build();
+    copy_path.connect_clicked(|b| {
+        b.clipboard()
+            .set_text(&logging::log_path().display().to_string());
+    });
+    log_row.add_suffix(&copy_path);
+    log_row.add_suffix(&open_log);
+    g_log.add(&log_row);
+
+    let tip = adw::ActionRow::builder()
+        .title("在终端里跟踪")
+        .subtitle("seltrans log -f")
+        .build();
+    g_log.add(&tip);
+    page.add(&g_log);
 
     let g2 = adw::PreferencesGroup::builder().title("依赖自检").build();
     for (name, ok, note) in selection::deps_report() {

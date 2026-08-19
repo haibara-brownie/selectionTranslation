@@ -2,6 +2,7 @@
 
 mod config;
 mod llm;
+mod logging;
 mod popup;
 mod presets;
 mod selection;
@@ -36,14 +37,20 @@ seltrans {ver} —— niri 下的划词翻译
                                    页面可选 general / providers / prompts / about
   seltrans translate [--text <文本>]
                                    在终端里翻译并打印结果，不开窗口
+  seltrans log [-f]                查看运行日志（-f 为持续跟踪）
   seltrans --version               显示版本
   seltrans --help                  显示本帮助
 
 translate 的输入优先级：--text > 管道输入 > 当前选中的文本
 配置文件：{cfg}
-仓库：{repo}",
+日志文件：{log}
+仓库：{repo}
+
+排查翻译结果不对时，先看日志里「发起翻译」那一行的 user 字符数和预览 ——
+它记的就是真正发给模型的内容。设 SELTRANS_DEBUG=1 可同时打到 stderr。",
         ver = env!("CARGO_PKG_VERSION"),
         cfg = config::config_path().display(),
+        log = logging::log_path().display(),
         repo = REPO_URL,
     );
 }
@@ -122,11 +129,38 @@ fn cli_translate(args: &[String]) -> i32 {
     code
 }
 
+/// `seltrans log [-f]`
+fn show_log(args: &[String]) -> i32 {
+    let path = logging::log_path();
+    if !path.exists() {
+        println!("还没有日志：{}", path.display());
+        return 0;
+    }
+    let follow = args.iter().any(|a| a == "-f" || a == "--follow");
+    let mut cmd = std::process::Command::new("tail");
+    if follow {
+        cmd.arg("-f");
+    }
+    cmd.arg("-n").arg("200").arg(&path);
+    match cmd.status() {
+        Ok(s) => s.code().unwrap_or(0),
+        Err(e) => {
+            eprintln!("seltrans: 无法执行 tail：{e}\n日志路径：{}", path.display());
+            1
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("popup");
 
+    if matches!(cmd, "popup" | "settings" | "config" | "translate") {
+        logging::startup(cmd);
+    }
+
     let code = match cmd {
+        "log" | "logs" => show_log(&args),
         "popup" => popup::run(arg_text(&args)),
         "settings" | "config" => {
             let page = args

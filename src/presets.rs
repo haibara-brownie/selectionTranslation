@@ -111,6 +111,35 @@ pub fn preset_by_id(id: &str) -> Option<&'static ProviderPreset> {
     PROVIDER_PRESETS.iter().find(|p| p.id == id)
 }
 
+/// 目标语言候选。`(写进提示词的值, 界面上显示的标签)`
+///
+/// 存的是**模型看得懂的语言名**而不是 ISO 代码 —— 它会直接替换掉提示词里的
+/// `{target_lang}`，写 "简体中文" 比写 "zh-Hans" 的效果稳定得多。
+/// 这里列的是各家主流大模型翻译质量都比较可靠的语种。
+pub const TARGET_LANGS: &[(&str, &str)] = &[
+    ("简体中文", "简体中文"),
+    ("繁體中文", "繁体中文 繁體中文"),
+    ("English", "英语 English"),
+    ("日本語", "日语 日本語"),
+    ("한국어", "韩语 한국어"),
+    ("Français", "法语 Français"),
+    ("Deutsch", "德语 Deutsch"),
+    ("Español", "西班牙语 Español"),
+    ("Português", "葡萄牙语 Português"),
+    ("Italiano", "意大利语 Italiano"),
+    ("Русский", "俄语 Русский"),
+    ("Українська", "乌克兰语 Українська"),
+    ("Nederlands", "荷兰语 Nederlands"),
+    ("Polski", "波兰语 Polski"),
+    ("Svenska", "瑞典语 Svenska"),
+    ("Türkçe", "土耳其语 Türkçe"),
+    ("العربية", "阿拉伯语 العربية"),
+    ("हिन्दी", "印地语 हिन्दी"),
+    ("ภาษาไทย", "泰语 ภาษาไทย"),
+    ("Tiếng Việt", "越南语 Tiếng Việt"),
+    ("Bahasa Indonesia", "印尼语 Bahasa Indonesia"),
+];
+
 /// 内置提示词。`{target_lang}` 会在调用前替换成配置里的目标语言。
 pub struct PromptPreset {
     pub id: &'static str,

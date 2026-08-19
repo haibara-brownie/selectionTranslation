@@ -103,7 +103,8 @@ impl Ui {
 
     fn start_translate(self: &Rc<Self>) {
         let source = self.source.borrow().clone();
-        if source.trim().is_empty() {
+        if crate::logging::is_blank(&source) {
+            crate::logging::warn("待翻译文本为空，跳过本次翻译");
             return;
         }
 
@@ -174,8 +175,12 @@ impl Ui {
         };
 
         match text {
-            Ok(t) if !t.trim().is_empty() => {
-                self.src_label.set_text(t.trim());
+            Ok(t) if !crate::logging::is_blank(&t) => {
+                let trimmed = t.trim();
+                self.src_label.set_text(trimmed);
+                self.src_expander
+                    .set_label(Some(&format!("原文（{} 字）", trimmed.chars().count())));
+                self.src_expander.set_expanded(true);
                 self.src_expander.set_visible(true);
                 *self.source.borrow_mut() = t;
                 self.start_translate();
@@ -195,7 +200,9 @@ impl Ui {
                      · 确认在按快捷键之前文字确实处于选中状态\n\
                      · 部分应用（如某些 Electron / Java 程序）不提供主选区，\
                      可在设置里把取词方式改成「自动」或「仅模拟 Ctrl+C」\n\
-                     · 模拟 Ctrl+C 需要 ydotool 服务：systemctl --user status ydotool"
+                     · 模拟 Ctrl+C 需要 ydotool 服务：systemctl --user status ydotool\n\n\
+                     详细过程见日志：{}",
+                    crate::logging::log_path().display()
                 ));
             }
         }
@@ -262,8 +269,10 @@ fn build(app: &adw::Application) -> Rc<Ui> {
         .build();
     src_label.add_css_class("dim-label");
 
+    // 默认展开：取词取错 / 取空时，一眼就能看出来问题出在取词而不是模型
     let src_expander = gtk::Expander::builder()
         .label("原文")
+        .expanded(true)
         .child(&src_label)
         .build();
 

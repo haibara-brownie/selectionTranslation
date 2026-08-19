@@ -12,6 +12,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::config::Provider;
+use crate::logging;
 
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -190,7 +191,27 @@ pub async fn stream_translate(
     tx: async_channel::Sender<Event>,
 ) {
     if let Err(e) = precheck(&p) {
+        logging::error(&format!("请求前置检查未通过：{e}"));
         let _ = tx.send(Event::Error(e)).await;
+        return;
+    }
+
+    // 这里是排查"模型说没收到内容"最关键的一条日志：记录真正发出去的用户消息
+    logging::info(&format!(
+        "发起翻译 | 供应商={} kind={} 模型={} 端点={} | system={} 字符 | user={} 字符 | user 预览: {}",
+        p.name,
+        p.kind,
+        p.model,
+        endpoint(&p),
+        system.chars().count(),
+        user.chars().count(),
+        logging::preview(&user)
+    ));
+
+    if logging::is_blank(&user) {
+        let msg = "待翻译的内容是空的（或只有空白/零宽字符），已拦下，不发请求".to_string();
+        logging::error(&msg);
+        let _ = tx.send(Event::Error(msg)).await;
         return;
     }
 
@@ -200,9 +221,9 @@ pub async fn stream_translate(
     let resp = match req.send().await {
         Ok(r) => r,
         Err(e) => {
-            let _ = tx
-                .send(Event::Error(format!("请求发不出去：{e}")))
-                .await;
+            let msg = format!("请求发不出去：{e}");
+            logging::error(&msg);
+            let _ = tx.send(Event::Error(msg)).await;
             return;
         }
     };
@@ -210,6 +231,7 @@ pub async fn stream_translate(
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
+        logging::error(&format!("HTTP {status} | 响应体：{}", truncate(&text, 600)));
         let _ = tx
             .send(Event::Error(format!(
                 "HTTP {status}\n{}",
@@ -223,6 +245,7 @@ pub async fn stream_translate(
     // 按字节缓冲再按行切，避免在多字节 UTF-8 中间截断（中文会变乱码）
     let mut buf: Vec<u8> = Vec::new();
     let mut got_any = false;
+    let mut total_chars = 0usize;
 
     while let Some(item) = stream.next().await {
         let chunk = match item {
@@ -247,6 +270,7 @@ pub async fn stream_translate(
             };
             let data = data.trim();
             if data == "[DONE]" {
+                logging::info(&format!("翻译完成，共 {total_chars} 字符"));
                 let _ = tx.send(Event::Done).await;
                 return;
             }
@@ -256,12 +280,15 @@ pub async fn stream_translate(
 
             match extract_delta(&p, &j) {
                 Err(e) => {
+                    logging::error(&format!("服务端返回 error 事件：{e}"));
                     let _ = tx.send(Event::Error(e)).await;
                     return;
                 }
                 Ok(Some(text)) => {
                     got_any = true;
+                    total_chars += text.chars().count();
                     if tx.send(Event::Delta(text)).await.is_err() {
+                        logging::info("窗口已关闭，中止流式接收");
                         return; // 窗口关了
                     }
                 }
@@ -271,12 +298,11 @@ pub async fn stream_translate(
     }
 
     if !got_any {
-        let _ = tx
-            .send(Event::Error(
-                "服务端没有返回任何内容。检查模型名是否正确、账户是否还有额度".into(),
-            ))
-            .await;
+        let msg = "服务端没有返回任何内容。检查模型名是否正确、账户是否还有额度".to_string();
+        logging::error(&msg);
+        let _ = tx.send(Event::Error(msg)).await;
     } else {
+        logging::info(&format!("翻译完成，共 {total_chars} 字符"));
         let _ = tx.send(Event::Done).await;
     }
 }
