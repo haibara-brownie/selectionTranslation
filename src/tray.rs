@@ -68,6 +68,8 @@ use crate::{APP_ID, autostart, logging};
 /// 托盘点出来的动作，送回 GTK 主线程处理
 #[derive(Debug, Clone)]
 pub enum Cmd {
+    /// 打开弹窗并聚焦输入框（左键点图标）
+    Input,
     Translate,
     Settings(Option<&'static str>),
     SetProvider(String),
@@ -198,8 +200,15 @@ impl Tray for SelTray {
         }
     }
 
-    /// 左键点图标 = 直接翻译当前选中的文本
+    /// 左键点图标 = 打开弹窗并聚焦输入框。
+    /// 之所以不是"翻译选中文本"：点图标这个动作本身通常就意味着当下没有选中任何东西，
+    /// 那样只会得到一个"没取到文本"的报错。
     fn activate(&mut self, _x: i32, _y: i32) {
+        self.send(Cmd::Input);
+    }
+
+    /// 中键 = 翻译当前选中的文本
+    fn secondary_activate(&mut self, _x: i32, _y: i32) {
         self.send(Cmd::Translate);
     }
 
@@ -262,6 +271,13 @@ impl Tray for SelTray {
             }
             .into(),
             MenuItem::Separator,
+            StandardItem {
+                label: "打开输入框翻译".into(),
+                icon_name: "document-edit-symbolic".into(),
+                activate: Box::new(|t: &mut Self| t.send(Cmd::Input)),
+                ..Default::default()
+            }
+            .into(),
             StandardItem {
                 label: "翻译选中文本".into(),
                 icon_name: "accessories-dictionary".into(),

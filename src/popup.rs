@@ -17,12 +17,12 @@ struct Ui {
     provider_dd: gtk::DropDown,
     model_dd: gtk::DropDown,
     src_expander: gtk::Expander,
-    src_label: gtk::Label,
+    /// 原文输入框，可编辑
+    src_view: gtk::TextView,
     out_view: gtk::TextView,
     status: gtk::Label,
     spinner: gtk::Spinner,
     cfg: RefCell<Config>,
-    source: RefCell<String>,
     /// 每次重新翻译自增，用来丢弃上一轮还在路上的流
     generation: Cell<u64>,
     /// 正在以代码方式改动下拉框时，不要触发重新翻译
@@ -48,6 +48,26 @@ impl Ui {
         buf.insert(&mut end, text);
         let mut end = buf.end_iter();
         self.out_view.scroll_to_iter(&mut end, 0.0, false, 0.0, 0.0);
+    }
+
+    /// 当前输入框里的内容 —— 翻译的唯一数据源
+    fn input_text(&self) -> String {
+        let buf = self.src_view.buffer();
+        buf.text(&buf.start_iter(), &buf.end_iter(), false).to_string()
+    }
+
+    fn set_input(&self, text: &str) {
+        self.src_view.buffer().set_text(text);
+    }
+
+    /// 折叠标题上带字数，取词取空时不用看日志就能发现
+    fn sync_input_label(&self) {
+        let n = self.input_text().trim().chars().count();
+        self.src_expander.set_label(Some(&if n == 0 {
+            "原文（空，可直接在这里输入）".to_string()
+        } else {
+            format!("原文（{n} 字）")
+        }));
     }
 
     fn output_text(&self) -> String {
@@ -118,9 +138,11 @@ impl Ui {
     }
 
     fn start_translate(self: &Rc<Self>) {
-        let source = self.source.borrow().clone();
+        let source = self.input_text();
         if crate::logging::is_blank(&source) {
             crate::logging::warn("待翻译文本为空，跳过本次翻译");
+            self.busy(false);
+            self.status.set_text("请先输入或选中要翻译的文本");
             return;
         }
 
@@ -179,6 +201,24 @@ impl Ui {
         });
     }
 
+    /// 打开成"输入模式"：清空、聚焦输入框，等着用户打字或粘贴。
+    /// 点托盘图标走的就是这条路 —— 那时候通常并没有选中任何文本。
+    fn open_input(self: &Rc<Self>) {
+        *self.cfg.borrow_mut() = Config::load();
+        self.sync_controls();
+
+        self.generation.set(self.generation.get() + 1);
+        self.busy(false);
+        self.set_input("");
+        self.sync_input_label();
+        self.src_expander.set_expanded(true);
+        self.src_expander.set_visible(true);
+        self.set_output("");
+        self.status.set_text("输入或粘贴文本，Ctrl+Enter 翻译");
+        self.window.present();
+        self.src_view.grab_focus();
+    }
+
     /// 抓一次词并翻译；`over` 非空时直接用它（`--text` 调试用）
     fn refresh(self: &Rc<Self>, over: Option<String>) {
         *self.cfg.borrow_mut() = Config::load();
@@ -192,13 +232,10 @@ impl Ui {
 
         match text {
             Ok(t) if !crate::logging::is_blank(&t) => {
-                let trimmed = t.trim();
-                self.src_label.set_text(trimmed);
-                self.src_expander
-                    .set_label(Some(&format!("原文（{} 字）", trimmed.chars().count())));
+                self.set_input(t.trim());
+                self.sync_input_label();
                 self.src_expander.set_expanded(true);
                 self.src_expander.set_visible(true);
-                *self.source.borrow_mut() = t;
                 self.start_translate();
             }
             Ok(_) | Err(_) => {
@@ -206,8 +243,10 @@ impl Ui {
                     Err(e) => e,
                     _ => "选中的内容是空的".to_string(),
                 };
-                self.src_expander.set_visible(false);
-                *self.source.borrow_mut() = String::new();
+                self.set_input("");
+                self.sync_input_label();
+                self.src_expander.set_expanded(true);
+                self.src_expander.set_visible(true);
                 self.busy(false);
                 self.status.set_text("没取到文本");
                 self.set_output(&format!(
@@ -261,7 +300,7 @@ fn build(app: &adw::Application) -> Rc<Ui> {
         .build();
     let redo_btn = gtk::Button::builder()
         .icon_name("view-refresh-symbolic")
-        .tooltip_text("重新翻译（F5）")
+        .tooltip_text("翻译（Ctrl+Enter / F5）")
         .build();
     let settings_btn = gtk::Button::builder()
         .icon_name("emblem-system-symbolic")
@@ -276,20 +315,31 @@ fn build(app: &adw::Application) -> Rc<Ui> {
     header.pack_start(&redo_btn);
 
     // ---- 正文 ----
-    let src_label = gtk::Label::builder()
-        .wrap(true)
-        .wrap_mode(gtk::pango::WrapMode::WordChar)
-        .selectable(true)
-        .xalign(0.0)
-        .margin_top(6)
+    // 原文区是**可编辑**的：取词取歪了可以就地改，也可以什么都不选、
+    // 直接点托盘图标打开这里手敲或粘贴要翻译的内容。
+    let src_view = gtk::TextView::builder()
+        .wrap_mode(gtk::WrapMode::WordChar)
+        .top_margin(6)
+        .bottom_margin(6)
+        .left_margin(8)
+        .right_margin(8)
         .build();
-    src_label.add_css_class("dim-label");
+
+    let src_scroller = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .min_content_height(64)
+        .max_content_height(150)
+        .propagate_natural_height(true)
+        .margin_top(6)
+        .child(&src_view)
+        .build();
+    src_scroller.add_css_class("card");
 
     // 默认展开：取词取错 / 取空时，一眼就能看出来问题出在取词而不是模型
     let src_expander = gtk::Expander::builder()
         .label("原文")
         .expanded(true)
-        .child(&src_label)
+        .child(&src_scroller)
         .build();
 
     let out_view = gtk::TextView::builder()
@@ -355,12 +405,11 @@ fn build(app: &adw::Application) -> Rc<Ui> {
         provider_dd: provider_dd.clone(),
         model_dd: model_dd.clone(),
         src_expander,
-        src_label,
+        src_view: src_view.clone(),
         out_view,
         status,
         spinner,
         cfg: RefCell::new(cfg),
-        source: RefCell::new(String::new()),
         generation: Cell::new(0),
         quiet: Cell::new(false),
         resident: Cell::new(false),
@@ -453,7 +502,13 @@ fn build(app: &adw::Application) -> Rc<Ui> {
         }
     });
 
-    // 快捷键：Esc 关闭、Ctrl+Shift+C 复制、F5 重译
+    // 输入框内容变了就更新标题上的字数
+    src_view.buffer().connect_changed({
+        let ui = ui.clone();
+        move |_| ui.sync_input_label()
+    });
+
+    // 快捷键：Esc 关闭、Ctrl+Enter / F5 翻译、Ctrl+Shift+C 复制
     let key = gtk::EventControllerKey::new();
     key.connect_key_pressed({
         let ui = ui.clone();
@@ -463,6 +518,11 @@ fn build(app: &adw::Application) -> Rc<Ui> {
             match keyval {
                 gtk::gdk::Key::Escape => {
                     ui.dismiss();
+                    glib::Propagation::Stop
+                }
+                // 输入框里回车是换行，Ctrl+Enter 才是"翻译"
+                gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter if ctrl => {
+                    ui.start_translate();
                     glib::Propagation::Stop
                 }
                 gtk::gdk::Key::F5 => {
@@ -512,8 +572,8 @@ fn provider_mut<'a>(cfg: &'a mut Config, id: &str) -> Option<&'a mut Provider> {
 }
 
 /// 前台模式：弹一次窗，窗口关掉进程就退出
-pub fn run(text_override: Option<String>) -> i32 {
-    run_inner(text_override, false)
+pub fn run(argv: Vec<String>) -> i32 {
+    run_inner(false, argv)
 }
 
 /// 常驻模式：注册托盘图标，不主动弹窗，进程一直在
@@ -521,22 +581,23 @@ pub fn run(text_override: Option<String>) -> i32 {
 /// 好处不止是"能看见它在跑" —— 快捷键再触发时是复用这个进程，省掉 GTK 冷启动，
 /// 弹窗几乎是瞬间出来的。
 pub fn run_tray() -> i32 {
-    // 已经有常驻进程了就直接退出。否则第二个进程会把 activate 转给已在跑的那个，
+    // 已经有常驻进程了就直接退出。否则第二个进程会把命令转给已在跑的那个，
     // 结果登录时凭空弹出一个翻译窗口。
     if crate::tray::is_running() {
         crate::logging::info("已有常驻进程在跑，本次 tray 启动直接退出");
         return 0;
     }
-    run_inner(None, true)
+    run_inner(true, vec!["seltrans".to_string(), "tray".to_string()])
 }
 
-fn run_inner(text_override: Option<String>, tray_mode: bool) -> i32 {
+fn run_inner(tray_mode: bool, local_argv: Vec<String>) -> i32 {
+    // 用 HANDLES_COMMAND_LINE 而不是 activate：这样 `seltrans popup --input`
+    // 这类参数能原样送到已经常驻的那个进程，而不是被丢掉。
+    let mut flags = gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE;
     // 带 --text 时不复用已有实例，方便调试
-    let flags = if text_override.is_some() && !tray_mode {
-        gtk::gio::ApplicationFlags::NON_UNIQUE
-    } else {
-        gtk::gio::ApplicationFlags::empty()
-    };
+    if local_argv.iter().any(|a| a == "--text") {
+        flags |= gtk::gio::ApplicationFlags::NON_UNIQUE;
+    }
 
     let app = adw::Application::builder()
         .application_id(APP_ID_POPUP)
@@ -546,7 +607,13 @@ fn run_inner(text_override: Option<String>, tray_mode: bool) -> i32 {
     let ui_slot: Rc<RefCell<Option<Rc<Ui>>>> = Rc::new(RefCell::new(None));
     let tray_ready = Rc::new(Cell::new(false));
 
-    app.connect_activate(move |app| {
+    app.connect_command_line(move |app, cmdline| {
+        let argv: Vec<String> = cmdline
+            .arguments()
+            .iter()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
+
         let ui = {
             let mut slot = ui_slot.borrow_mut();
             match slot.as_ref() {
@@ -560,19 +627,25 @@ fn run_inner(text_override: Option<String>, tray_mode: bool) -> i32 {
         };
 
         if tray_mode && !tray_ready.get() {
-            // 这次 activate 是托盘进程自己启动，不是用户按快捷键，所以不弹窗
+            // 这次是托盘进程自己启动，不是用户按快捷键，所以不弹窗
             tray_ready.set(true);
             ui.resident.set(true);
             *ui.hold.borrow_mut() = Some(app.hold());
             setup_tray(app, &ui);
-            return;
+            return glib::ExitCode::SUCCESS;
+        }
+
+        if argv.iter().any(|a| a == "--input") {
+            ui.open_input();
+            return glib::ExitCode::SUCCESS;
         }
 
         ui.window.present();
-        ui.refresh(text_override.clone());
+        ui.refresh(crate::arg_text(&argv));
+        glib::ExitCode::SUCCESS
     });
 
-    glib::ExitCode::get(&app.run_with_args::<&str>(&[])) as i32
+    glib::ExitCode::get(&app.run_with_args(&local_argv)) as i32
 }
 
 /// 注册托盘图标，并把托盘菜单的点击派发回 GTK 主线程
@@ -623,6 +696,7 @@ fn setup_tray(app: &adw::Application, ui: &Rc<Ui>) {
         while let Ok(cmd) = rx.recv().await {
             crate::logging::info(&format!("托盘命令：{cmd:?}"));
             match cmd {
+                Cmd::Input => ui.open_input(),
                 Cmd::Translate => {
                     ui.window.present();
                     ui.refresh(None);

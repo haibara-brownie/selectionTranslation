@@ -36,6 +36,7 @@ seltrans {ver} —— niri 下的划词翻译
 
 用法：
   seltrans popup [--text <文本>]   取当前选中的文本并弹窗翻译（快捷键调用的就是这个）
+  seltrans popup --input           打开弹窗并聚焦输入框，手敲或粘贴要翻译的内容
   seltrans settings [页面]         打开图形配置界面
                                    页面可选 general / providers / prompts / about
   seltrans translate [--text <文本>]
@@ -61,7 +62,7 @@ translate 的输入优先级：--text > 管道输入 > 当前选中的文本
 }
 
 /// 从参数里取 --text 的值
-fn arg_text(args: &[String]) -> Option<String> {
+pub fn arg_text(args: &[String]) -> Option<String> {
     let i = args.iter().position(|a| a == "--text" || a == "-t")?;
     args.get(i + 1).cloned()
 }
@@ -190,7 +191,7 @@ fn main() {
                 }
             }
         }
-        "popup" => popup::run(arg_text(&args)),
+        "popup" => popup::run(args.clone()),
         "settings" | "config" => {
             let page = args
                 .get(2)
