@@ -10,3 +10,9 @@ venv/
 .idea/
 .vscode/
 /target
+
+# AUR 打包产物
+packaging/aur/src/
+packaging/aur/pkg/
+packaging/aur/*.tar.gz
+packaging/aur/*.pkg.tar.zst

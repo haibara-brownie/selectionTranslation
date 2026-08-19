@@ -1,0 +1,22 @@
+pkgbase = seltrans
+	pkgdesc = Wayland 下的全局划词翻译，支持多家大模型、可切换翻译风格（GTK4 / libadwaita）
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/haibara-brownie/selectionTranslation
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = cargo
+	depends = gtk4
+	depends = libadwaita
+	depends = wl-clipboard
+	depends = gcc-libs
+	depends = glibc
+	optdepends = ydotool: 主选区取不到词时模拟 Ctrl+C 兜底
+	optdepends = niri: 参考 /usr/share/doc/seltrans/niri-snippet.kdl 配置快捷键与浮动窗口规则
+	options = !lto
+	options = !debug
+	source = seltrans-0.1.0.tar.gz::https://github.com/haibara-brownie/selectionTranslation/archive/refs/tags/v0.1.0.tar.gz
+	sha256sums = 1e2672a079b5f86eafc25f55362e2056fb470750064667f27b6079359411d769
+
+pkgname = seltrans

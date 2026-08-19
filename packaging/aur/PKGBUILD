@@ -1,0 +1,50 @@
+# Maintainer: haibarabrownie <haibarabrownie@gmail.com>
+pkgname=seltrans
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Wayland 下的全局划词翻译，支持多家大模型、可切换翻译风格（GTK4 / libadwaita）"
+arch=('x86_64' 'aarch64')
+url="https://github.com/haibara-brownie/selectionTranslation"
+license=('MIT')
+depends=('gtk4' 'libadwaita' 'wl-clipboard' 'gcc-libs' 'glibc')
+makedepends=('cargo')
+# !lto：makepkg 默认往 CFLAGS 里加 -flto=auto，会把 aws-lc-sys（rustls 的加密后端）
+#       的 C 目标文件编成 LLVM bitcode，Rust 链接时找不到符号而失败。
+# !debug：release profile 里已经开了 strip，再出一个 -debug 包是空的。
+options=('!lto' '!debug')
+optdepends=(
+  'ydotool: 主选区取不到词时模拟 Ctrl+C 兜底'
+  'niri: 参考 /usr/share/doc/seltrans/niri-snippet.kdl 配置快捷键与浮动窗口规则'
+)
+_repo=selectionTranslation
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('1e2672a079b5f86eafc25f55362e2056fb470750064667f27b6079359411d769')
+
+prepare() {
+  cd "$_repo-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_repo-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+package() {
+  cd "$_repo-$pkgver"
+  local _appid=xyz.brownie.SelectionTranslation
+
+  install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+  install -Dm644 "data/$_appid.svg" \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/$_appid.svg"
+  install -Dm644 "data/$_appid.desktop" \
+    "$pkgdir/usr/share/applications/$_appid.desktop"
+
+  # niri 的快捷键与窗口规则是用户配置，包里只作为示例提供，不动 ~/.config
+  install -Dm644 data/niri-snippet.kdl "$pkgdir/usr/share/doc/$pkgname/niri-snippet.kdl"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
