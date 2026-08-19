@@ -23,6 +23,7 @@ struct Ui {
     out_view: gtk::TextView,
     status: gtk::Label,
     spinner: gtk::Spinner,
+    spinner_rev: gtk::Revealer,
     cfg: RefCell<Config>,
     /// 每次重新翻译自增，用来丢弃上一轮还在路上的流
     generation: Cell<u64>,
@@ -77,7 +78,7 @@ impl Ui {
     }
 
     fn busy(&self, on: bool) {
-        self.spinner.set_visible(on);
+        self.spinner_rev.set_reveal_child(on);
         if on {
             self.spinner.start();
         } else {
@@ -357,6 +358,13 @@ fn build(app: &adw::Application) -> Rc<Ui> {
         .build();
 
     let spinner = gtk::Spinner::new();
+    // 用 Revealer 包一层：忙碌指示淡入淡出，不硬闪
+    let spinner_rev = gtk::Revealer::builder()
+        .transition_type(gtk::RevealerTransitionType::Crossfade)
+        .transition_duration(220)
+        .reveal_child(false)
+        .child(&spinner)
+        .build();
     let out_head = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
         .spacing(8)
@@ -365,7 +373,7 @@ fn build(app: &adw::Application) -> Rc<Ui> {
     let out_title = gtk::Label::builder().label("译文").xalign(0.0).build();
     out_title.add_css_class("st-section");
     out_head.append(&out_title);
-    out_head.append(&spinner);
+    out_head.append(&spinner_rev);
 
     let out_scroller = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
@@ -427,6 +435,7 @@ fn build(app: &adw::Application) -> Rc<Ui> {
         out_view,
         status,
         spinner,
+        spinner_rev,
         cfg: RefCell::new(cfg),
         generation: Cell::new(0),
         quiet: Cell::new(false),

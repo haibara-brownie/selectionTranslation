@@ -181,9 +181,18 @@ fn css(f: &Flavor) -> String {
 @define-color accent_fg_color {base};
 @define-color accent_color {blue};
 
-window, .background {{
+/* 注意别写成 `.background` —— GtkPopover 自己也带这个样式类，
+   一刷就会在弹层外面露出一圈窗口底色的方块 */
+window {{
   background-color: {base};
   color: {text};
+}}
+popover.background {{
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+  padding: 0;
 }}
 
 headerbar {{
@@ -253,6 +262,94 @@ headerbar {{
 }}
 .st-chip > button > * {{
   color: {subtext0};
+}}
+
+/* ---- 下拉弹层 ----
+   GtkDropDown 的弹层里除了 popover 本体，还套着 listview / scrolledwindow，
+   它们各自带默认底色，不一起改就会看到一块跟主题对不上的方块。 */
+popover > contents {{
+  background-color: {mantle};
+  color: {text};
+  border: 1px solid {surface1};
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: 0 6px 20px alpha(#000000, 0.28);
+}}
+popover > arrow {{
+  background-color: {mantle};
+  border: 1px solid {surface1};
+}}
+popover listview,
+popover list,
+popover scrolledwindow,
+popover .view,
+popover viewport,
+dropdown > popover > contents > * {{
+  background-color: transparent;
+  background-image: none;
+  color: {text};
+}}
+popover listview > row,
+popover list > row {{
+  border-radius: 8px;
+  padding: 5px 9px;
+  min-height: 0;
+  color: {text};
+}}
+popover listview > row:hover,
+popover list > row:hover {{
+  background-color: {surface0};
+}}
+popover listview > row:selected,
+popover list > row:selected {{
+  background-color: {blue};
+  color: {base};
+}}
+/* 下拉里的搜索框 */
+popover entry,
+popover .search {{
+  background-color: {surface0};
+  color: {text};
+  border: 1px solid {surface1};
+  border-radius: 8px;
+}}
+
+/* 顶部那个提示词下拉：主控件，给它实体感 */
+dropdown:not(.st-chip) > button {{
+  background-color: {surface0};
+  color: {text};
+  border: 1px solid {surface1};
+  border-radius: 10px;
+}}
+dropdown:not(.st-chip) > button:hover {{
+  background-color: {surface1};
+}}
+
+/* ---- 动画 ----
+   统一给会变色 / 变边框的控件加过渡，鼠标划过和聚焦都是渐变而不是硬切。 */
+button,
+dropdown > button,
+row,
+listview > row,
+list > row,
+entry,
+.st-card {{
+  transition:
+    background-color 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 160ms ease;
+}}
+button:active,
+dropdown > button:active {{
+  transition-duration: 60ms;
+}}
+/* 卡片聚焦时描边渐变到强调色 */
+.st-card:focus-within {{
+  transition:
+    border-color 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }}
 "#,
         base = f.base,

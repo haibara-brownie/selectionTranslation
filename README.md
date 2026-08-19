@@ -77,6 +77,10 @@ Arch 上一次装齐：`pac rust gtk4 libadwaita wl-clipboard ydotool`
 
 色值直接取自 [catppuccin/palette](https://github.com/catppuccin/palette)，通过一个 GTK CssProvider 以 `STYLE_PROVIDER_PRIORITY_USER` 优先级注入，同时输出 libadwaita 1.6+ 的 CSS 变量和旧版 `@define-color`。改完立刻生效，不用重开窗口。
 
+下拉弹层、列表行、按钮的悬停与聚焦都带 160ms 过渡，忙碌指示用 Revealer 淡入淡出。
+
+写主题 CSS 时有个坑：**别用裸的 `.background` 选择器** —— GtkPopover 自己也带这个样式类，一刷就会在弹层外面露出一圈窗口底色的方块。要用 `window`。
+
 ### 开机自启动
 
 设置界面「通用」页有开关，托盘右键菜单里也有；命令行是：
