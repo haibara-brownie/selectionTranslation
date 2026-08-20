@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
@@ -169,7 +170,10 @@ impl Config {
         }
     }
 
-    /// 原子写入 + 0600 权限
+    /// 原子写入。类 Unix 上顺便把权限收到 0600（文件里有 API key）。
+    ///
+    /// Windows 没有 Unix 那套权限位（它走 ACL，`PermissionsExt` 在那儿根本不存在），
+    /// 所以那边靠位置保护：配置落在 `%APPDATA%`，本来就只有当前用户能进。
     pub fn save(&self) -> std::io::Result<()> {
         let path = config_path();
         if let Some(dir) = path.parent() {
@@ -178,6 +182,7 @@ impl Config {
         let tmp = path.with_extension("json.tmp");
         {
             let mut f = std::fs::File::create(&tmp)?;
+            #[cfg(unix)]
             f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
             f.write_all(serde_json::to_string_pretty(self)?.as_bytes())?;
             f.write_all(b"\n")?;
