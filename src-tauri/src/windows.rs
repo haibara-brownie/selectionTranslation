@@ -63,15 +63,26 @@ pub fn open_popup(app: &AppHandle, req: TranslateRequest) -> tauri::Result<Webvi
     }
 
     let cfg = Config::load();
-    let win = WebviewWindowBuilder::new(app, POPUP, WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, POPUP, WebviewUrl::App("index.html".into()))
         .title("划词翻译")
         .inner_size(cfg.popup_width as f64, cfg.popup_height as f64)
-        // 顶栏是自己画的，圆角要靠透明背景才不会露出黑角
-        .decorations(false)
-        .transparent(true)
-        // 位置不在这里设 —— Wayland 下客户端没权限摆自己，那是合成器的事
-        // （niri 的 window-rule 按 app-id 匹配，见 data/niri-snippet.kdl）
-        .build()?;
+        // 顶栏是自己画的
+        .decorations(false);
+    // 位置不在这里设 —— Wayland 下客户端没权限摆自己，那是合成器的事
+    // （niri 的 window-rule 按 app-id 匹配，见 data/niri-snippet.kdl）
+
+    // 透明窗口是为了让 CSS 的圆角不露出方角。
+    //
+    // **macOS 上做不到**：Tauri 把 `transparent()` 挡在 `macos-private-api` 特性后面，
+    // 那是苹果的私有 API —— 会被 App Store 拒，也可能随系统更新失效。为一个圆角
+    // 冒这个险不值得，所以 mac 上用不透明的方角窗口，并告诉前端别画圆角
+    // （否则四角会露出白方块）。
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.transparent(true);
+    #[cfg(target_os = "macos")]
+    let builder = builder.initialization_script("document.documentElement.classList.add('opaque')");
+
+    let win = builder.build()?;
 
     // 常驻模式下按 Esc / 点 ✕ 只藏窗口。重建一个 webview 要几百毫秒，
     // 而划词翻译的全部价值就在于按下快捷键就出来。

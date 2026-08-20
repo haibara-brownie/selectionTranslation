@@ -17,6 +17,7 @@ body {
   margin: 0;
   /* 窗口是无边框透明的，圆角要靠这里露出来 */
   background: transparent;
+  color-scheme: inherit;
   font-family: var(--st-font, system-ui, sans-serif);
   font-size: 14px;
   color: var(--ctp-text);
@@ -33,6 +34,19 @@ body {
   border: 1px solid var(--ctp-surface0);
   border-radius: 14px;
   overflow: hidden;
+}
+
+/* macOS 上窗口没法做成透明的（要私有 API，见 windows.rs 的注释），
+   Rust 侧会在 <html> 上挂 .opaque。这时候不能画圆角 —— 窗口本身是方的，
+   圆角只会让四角露出白方块。方角 + 不透明底，干净收场。 */
+html.opaque,
+html.opaque body {
+  background: var(--ctp-base);
+}
+
+html.opaque .shell {
+  border: none;
+  border-radius: 0;
 }
 
 /* ---------- 顶栏 ---------- */
