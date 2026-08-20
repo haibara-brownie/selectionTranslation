@@ -75,6 +75,28 @@ seltrans 现在**只在 niri/Wayland 上真正跑通**。mac 和 Windows 的代�
   而取词又必须赶在那之前。见 `tickets/T-01.md`。
 - **快捷键写死**。撞上别人的绑定时用户没有任何办法改。见 `tickets/T-07.md`。
 
+## 六点五、两台机器的差异（接续开发前先看这个）
+
+| | Arch / niri 工作站 | Mac |
+|---|---|---|
+| 根 package `seltrans`（GTK4 版） | **能编** | 编不过（没有 gtk4/libadwaita，且要求 ≥4.18） |
+| cargo 命令 | `cargo test --workspace` | `cargo test --workspace --exclude seltrans` |
+| 指定二进制 | `cargo build -p seltrans-tauri` | 同左（写 `--bin` 会去找根包，报 no bin target） |
+| Windows 代码 | 同样编不了 | 用 `/tmp` 里的一次性壳子交叉检查，见 T-06 |
+| 跑起来验 | `./target/release/seltrans-tauri tray &`，**别覆盖 `~/.local/bin/seltrans`**（那是 GTK 版） | `pnpm tauri build --bundles app` 出 .app 再装到 /Applications |
+
+### Mac 侧攒下的验证手法（Linux 上大多也适用）
+
+- **动画要录像抽帧，不能截图**：`screencapture` 自己就要 200ms+，抓不到 120~150ms 的动画。
+  用 `screencapture -v -V <秒>` 录像 + `ffmpeg fps=N,tile=RxC` 拼联络表，再按时间窗
+  `-ss/-t` 密集抽帧。注意 `tile` + `-frames:v 1` 只取**开头** N 帧，要先粗看定位时间窗。
+- **看不见的东西导出来看**：托盘图标在 mac 上被拥挤的菜单栏挤到了屏幕外，就把光栅化结果
+  dump 成 RGBA、用 ffmpeg 叠到浅色/深色底上看。
+- **`popup --input` 是进入弹窗焦点链的确定入口**（`apply()` 会 focus 原文框），
+  从那儿数 Tab 比从窗口激活状态数可靠。
+- **凡是「只表现成看不见」的失败都该有测试兜底**：托盘图标画成空白、mask 没生效变黑块，
+  在托盘上都只是「图标不见了/很怪」，很难往光栅化上想。
+
 ## 七、已知限制（本轮不解决，但要写进发版说明）
 
 - **ad-hoc 签名的 app 每次升级都要重勾辅助功能**。cdhash 变了 TCC 就不认。
