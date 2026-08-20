@@ -45,6 +45,12 @@ pub struct UiState {
     /// **首次提示里的快捷键必须来自这里，不能在前端写死**：三个平台默认值不同，
     /// 用户还能自己改 —— 一份说谎的教程比没有更糟。
     pub hotkeys: (String, String),
+    /// "linux" | "macos" | "windows"。
+    ///
+    /// 快捷键排版要按平台来（mac 是连写的 ⌥⇧T，另两家用加号），提示文案里
+    /// 「托盘图标」这类说法也分平台。跟 `UiState` 一起给，是因为弹窗的启动路径上
+    /// 多一次 IPC 往返就多一分肉眼可见的延迟 —— 划词翻译最忌讳这个。
+    pub os: String,
 }
 
 /// 主题设成"跟随系统"时，用哪个风味。
@@ -96,6 +102,7 @@ impl UiState {
             configured: !cfg.providers.is_empty(),
             onboarding: !cfg.onboarded,
             hotkeys: crate::hotkey::current(),
+            os: std::env::consts::OS.to_string(),
         }
     }
 }

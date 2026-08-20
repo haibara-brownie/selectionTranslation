@@ -32,8 +32,14 @@ window-rule {
 // Tauri 只有一个 app-id（配置里的 identifier，需开 app.enableGtkAppId，
 // 否则 tao 会拿二进制名当 app-id），弹窗和设置页共用，所以靠标题区分。
 // 不开那个开关的话窗口会被当成普通窗口平铺，弹不出来。
+//
+// **正则开头的 (?i) 不能去掉。** AppImage 里 linuxdeploy 的 GTK 插件会强制
+// `GDK_BACKEND=x11`（它的注释指向 tauri#8541，说 Wayland 后端会崩），于是那份包
+// 跑在 XWayland 上；X11 下窗口身份来自 WM_CLASS，GDK 把程序名首字母大写当 class，
+// app-id 就成了 `Xyz.brownie.…`。deb / 直接跑二进制都是原生 Wayland、全小写。
+// 一条规则要同时管住这两种。
 window-rule {
-    match app-id=r#"^xyz\.brownie\.SelectionTranslation$"# title="^划词翻译$"
+    match app-id=r#"(?i)^xyz\.brownie\.SelectionTranslation$"# title="^划词翻译$"
     open-floating true
     default-column-width { fixed 560; }
     default-window-height { fixed 480; }
@@ -42,7 +48,7 @@ window-rule {
 
 // Tauri 版的设置窗口：同一个 app-id，靠标题区分
 window-rule {
-    match app-id=r#"^xyz\.brownie\.SelectionTranslation$"# title="设置$"
+    match app-id=r#"(?i)^xyz\.brownie\.SelectionTranslation$"# title="设置$"
     open-floating true
     default-column-width { fixed 900; }
     default-window-height { fixed 700; }
