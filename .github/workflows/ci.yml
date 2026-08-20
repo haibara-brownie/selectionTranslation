@@ -1,9 +1,12 @@
 # 日常检查：push 和 PR 都跑。
 #
-# 只在 Linux 上跑。mac / Windows 的编译验证放在 release.yml 里（打 tag 才跑）——
-# 那两家 runner 的计费倍率是 Linux 的 10 倍 / 2 倍，日常 push 没必要烧。
-# 代价是 mac / Windows 专属代码的编译错误要等发版才暴露；真要提前验，
-# 手动跑一次 release.yml 的 build job 即可。
+# Linux 上跑完整检查（fmt / clippy / 测试 / 前端），mac 和 Windows 只做
+# `cargo check` + clippy —— 那两家的平台专属代码在 Linux 上根本不编译，
+# cfg 一挡，本机全绿说明不了什么。真正的链接和打包仍归 release.yml。
+#
+# 早先这里只跑 Linux，理由是那两家 runner 计费倍率高（10x / 2x）。但那个倍率
+# **只对私有仓库生效**，本仓库是公开的、标准 runner 不计费，所以前提不成立。
+# 代价原本是「mac / Windows 的编译错误要等发版才暴露」—— v0.2.0 就为此返工两次。
 name: CI
 
 on:
@@ -134,3 +137,51 @@ jobs:
 
       - name: cargo clippy
         run: cargo clippy -p seltrans --all-targets -- -D warnings
+
+  # ── mac / Windows 的编译检查 ─────────────────────────────────────────────
+  #
+  # 为什么值得在每次 push 上跑：这两家的平台专属代码（取词、托盘、快捷键）在
+  # Linux 上**根本不编译**，`cfg` 一挡，本机 clippy 全绿也说明不了什么。
+  # v0.2.0 发版时 Windows 连挂两次（缺 icon.ico、0600 权限那段是 Unix 专属），
+  # 都是打 tag 才发现的；后来 Mac 侧加的 Windows UIA 取词更是一次没编译过。
+  # 发版时才暴露 = 发版当场返工。
+  #
+  # 这里只做 `cargo check`，不 build 不打包 —— 目的是抓类型错误和 cfg 漏写，
+  # 那是这类问题的全部形态；真正的链接和打包留给 release.yml。
+  #
+  # 计费：本仓库是**公开**的，标准 runner 不计费（10x / 2x 的倍率只对私有仓库
+  # 生效）。变成私有的话再权衡要不要缩到只在 PR 上跑。
+  cross:
+    name: 编译检查（${{ matrix.name }}）
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          key: cross-${{ matrix.os }}
+
+      # Windows x86_64 上 rustls 的后端 aws-lc-sys 要 NASM，runner 镜像里没有；
+      # 用 crate 自带的预编译对象绕开（和 release.yml 里同一招）
+      - name: cargo check
+        env:
+          AWS_LC_SYS_PREBUILT_NASM: 1
+        # --exclude seltrans：根 package 是 GTK4 版，只在 Linux 上编得动
+        run: cargo check --workspace --exclude seltrans --all-targets
+
+      - name: cargo clippy
+        env:
+          AWS_LC_SYS_PREBUILT_NASM: 1
+        run: cargo clippy --workspace --exclude seltrans --all-targets -- -D warnings
