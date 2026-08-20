@@ -2,15 +2,24 @@
 <!--
   macOS 菜单栏模板图标的唯一矢量源。
 
-  模板图标只认 alpha，系统负责按浅色/深色菜单栏上色，所以这里不复制彩色应用图标。
-  选区条和外扩角标保留应用图标轮廓，箭头用透明镂空保证 16/22pt 下仍能读清。
+  模板图标只认 alpha，系统负责按浅色/深色菜单栏上色。
+
+  **这里的每个尺寸都是按 22pt 反推的，不是缩小版的应用图标。** 菜单栏实际只有 22 物理
+  点（Retina 下 44 像素），彩色图标里那些细节到这个尺寸全会糊掉：
+  - 角标 `stroke-width: 1` 折算过来不到 1 像素，抗锯齿之后是灰噪点，还会和选区条粘连
+    —— 所以**整个去掉**，不是调细。
+  - 箭头镂空低于 2 像素就不再是"洞"，只是一道灰边 —— 所以 `stroke-width` 给到 2.5
+    （22pt 下约 2.3 像素）。
+  - 选区条加高到 12，给箭头留出上下各约 4 像素的净空。
+
+  改这份的时候请按 22pt 渲出来看，别只看放大图：放大图上什么都好看。
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <mask id="selection" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
     <rect width="24" height="24" fill="#000"/>
-    <rect x="4" y="8" width="16" height="8" rx="2" fill="#fff"/>
-    <path d="M3 10V7h3M21 14v3h-3" fill="none" stroke="#fff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M8 12h8m-3-3 3 3-3 3" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="3" y="6" width="18" height="12" rx="3.5" fill="#fff"/>
+    <path d="M7.5 12h8.5m-3.5-3.5 3.5 3.5-3.5 3.5" fill="none" stroke="#000"
+          stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
   </mask>
   <rect width="24" height="24" fill="#000" mask="url(#selection)"/>
 </svg>

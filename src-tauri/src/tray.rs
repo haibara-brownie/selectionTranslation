@@ -43,6 +43,57 @@ use seltrans_core::logging;
 
 use crate::windows::{self, TranslateRequest};
 
+/// 内置图标的矢量源。三份各有各的用途，别互相替代：
+///
+/// | 文件 | 谁用 | 为什么不能共用 |
+/// |---|---|---|
+/// | `xyz.brownie.SelectionTranslation.svg` | Linux 托盘 48/64 档、以及打包出的各种 PNG | 按 128 设计，细节最全 |
+/// | `tray-small.svg` | Linux 托盘 22/32 档 | 应用图标缩到 22px 时每个字形只剩约 4 像素，必糊 |
+/// | `tray-mono.svg` | macOS 菜单栏 | 模板图标只认 alpha，彩色图压成单色会丢层级 |
+/// 三份都对两个平台可见（而不是各自 cfg 到自己那边），是为了让**测试能覆盖到全部三份**
+/// —— 测试跑在 mac 上，而 `SMALL` 只有 Linux 构建会用；分别 cfg 的话它就成了一段只能
+/// 盲改的资源。非 Linux 构建下用不到的那两个标记为允许未使用。
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod icons {
+    pub const APP: &[u8] = include_bytes!("../../data/xyz.brownie.SelectionTranslation.svg");
+    pub const SMALL: &[u8] = include_bytes!("../../data/tray-small.svg");
+    pub const MONO: &[u8] = include_bytes!("../../data/tray-mono.svg");
+}
+
+/// 把内置 SVG 光栅化成**不预乘**的 RGBA。
+///
+/// 两个平台的托盘都从这里出发，之后各自重排通道：Linux 的 SNI 要大端 ARGB，
+/// Tauri 的 `Image` 要 RGBA。合并到一处是为了让「图标画没画出来」这件事**只有一个
+/// 地方会错**，也让 Linux 专属的那份图能在别的平台上被单测覆盖 —— 否则它就成了
+/// 一段只能盲改的代码。
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn rasterize(svg: &[u8], size: u32) -> Option<Vec<u8>> {
+    use resvg::tiny_skia;
+
+    let opt = resvg::usvg::Options::default();
+    let tree = match resvg::usvg::Tree::from_data(svg, &opt) {
+        Ok(t) => t,
+        Err(e) => {
+            logging::error(&format!("内置托盘图标解析失败：{e}"));
+            return None;
+        }
+    };
+    let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
+    let scale = tiny_skia::Transform::from_scale(
+        size as f32 / tree.size().width(),
+        size as f32 / tree.size().height(),
+    );
+    resvg::render(&tree, scale, &mut pixmap.as_mut());
+
+    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
+    for px in pixmap.pixels() {
+        let c = px.demultiply();
+        rgba.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
+    }
+    Some(rgba)
+}
+
 /// 托盘句柄。克隆很便宜（内部就是一个服务句柄）。
 #[derive(Clone)]
 pub struct TrayHandle(imp::Inner);
@@ -538,6 +589,242 @@ mod imp {
     /// 用 resvg 而不是 GTK 版那样用 GdkPixbuf：这个 crate 里没有 GTK，也不值得为一个
     /// 图标把它拖回来。
     fn render_icons() -> Vec<Icon> {
+        // 面板从这几档里挑最合适的，多给几个免得被拉伸糊掉。
+        //
+        // **22 / 32 用另一套构图**：应用图标是按 128 设计的，缩到 22px 时外层安全边距
+        // 吃掉两侧各 1.4 像素，选区条里那三个字形总共只剩约 12 个物理像素 —— 每字 4 像素，
+        // 「文」必然糊成一团，四角括号退化成噪点。实测确认过。理由见 data/tray-small.svg。
+        [22u32, 32, 48, 64]
+            .iter()
+            .filter_map(|&size| {
+                let svg = if size <= 32 {
+                    super::icons::SMALL
+                } else {
+                    super::icons::APP
+                };
+                render_one(svg, size)
+            })
+            .collect()
+    }
+
+    fn render_one(svg: &[u8], size: u32) -> Option<Icon> {
+        let rgba = super::rasterize(svg, size)?;
+        // 共享的光栅化给的是不预乘 RGBA；SNI 要的是大端 ARGB，重排一下
+        // （GTK 版喂给面板的 GdkPixbuf 数据就是不预乘的，面板按那个来）
+        let mut data = Vec::with_capacity(rgba.len());
+        for px in rgba.chunks_exact(4) {
+            data.extend_from_slice(&[px[3], px[0], px[1], px[2]]);
+        }
+        Some(Icon {
+            width: size as i32,
+            height: size as i32,
+            data,
+        })
+    }
+
+    pub struct SelTray {
+        app: AppHandle,
+        snap: Snapshot,
+        icons: Vec<Icon>,
+    }
+
+    impl SelTray {
+        /// 改完配置后立刻重取快照。
+        /// ksni 会在回调返回后 diff 菜单，所以这里改完就等于菜单跟着变了。
+        fn reload(&mut self) {
+            self.snap = Snapshot::load(&self.app);
+        }
+    }
+
+    impl Tray for SelTray {
+        fn id(&self) -> String {
+            "seltrans".into()
+        }
+
+        fn title(&self) -> String {
+            TITLE.into()
+        }
+
+        /// 只有内嵌位图渲染不出来时才退回按名字找主题图标
+        fn icon_name(&self) -> String {
+            if self.icons.is_empty() {
+                "xyz.brownie.SelectionTranslation".into()
+            } else {
+                String::new()
+            }
+        }
+
+        fn icon_pixmap(&self) -> Vec<Icon> {
+            self.icons.clone()
+        }
+
+        fn icon_theme_path(&self) -> String {
+            icon_dir()
+        }
+
+        fn tool_tip(&self) -> ToolTip {
+            ToolTip {
+                icon_name: String::new(),
+                icon_pixmap: self.icons.clone(),
+                title: TITLE.into(),
+                description: self.snap.tooltip(),
+            }
+        }
+
+        /// 左键点图标 = 打开输入框。
+        /// 不是「翻译选中文本」：会去点托盘图标，通常就意味着当下没选中任何东西，
+        /// 那样只会得到一句「没取到文本」。
+        fn activate(&mut self, _x: i32, _y: i32) {
+            dispatch(&self.app, Action::Input);
+        }
+
+        /// 中键 = 翻译当前选中的文本
+        fn secondary_activate(&mut self, _x: i32, _y: i32) {
+            dispatch(&self.app, Action::Translate);
+        }
+
+        fn menu(&self) -> Vec<MenuItem<Self>> {
+            let s = &self.snap;
+
+            let prompt_items: Vec<MenuItem<Self>> = s
+                .prompts
+                .iter()
+                .map(|(id, label)| {
+                    let id = id.clone();
+                    CheckmarkItem {
+                        label: label.clone(),
+                        checked: *id == s.active_prompt,
+                        activate: Box::new(move |t: &mut Self| {
+                            set_prompt(&id);
+                            t.reload();
+                        }),
+                        ..Default::default()
+                    }
+                    .into()
+                })
+                .collect();
+
+            let provider_items: Vec<MenuItem<Self>> = if s.providers.is_empty() {
+                vec![
+                    StandardItem {
+                        label: "还没有配置供应商".into(),
+                        enabled: false,
+                        ..Default::default()
+                    }
+                    .into(),
+                ]
+            } else {
+                s.providers
+                    .iter()
+                    .map(|(id, name)| {
+                        let id = id.clone();
+                        CheckmarkItem {
+                            label: name.clone(),
+                            checked: *id == s.active_provider,
+                            activate: Box::new(move |t: &mut Self| {
+                                set_provider(&id);
+                                t.reload();
+                            }),
+                            ..Default::default()
+                        }
+                        .into()
+                    })
+                    .collect()
+            };
+
+            vec![
+                StandardItem {
+                    label: s.headline(),
+                    enabled: false,
+                    ..Default::default()
+                }
+                .into(),
+                StandardItem {
+                    label: s.subhead(),
+                    enabled: false,
+                    ..Default::default()
+                }
+                .into(),
+                MenuItem::Separator,
+                StandardItem {
+                    label: "打开输入框翻译".into(),
+                    icon_name: "document-edit-symbolic".into(),
+                    activate: Box::new(|t: &mut Self| dispatch(&t.app, Action::Input)),
+                    ..Default::default()
+                }
+                .into(),
+                StandardItem {
+                    label: "翻译选中文本".into(),
+                    icon_name: "accessories-dictionary".into(),
+                    activate: Box::new(|t: &mut Self| dispatch(&t.app, Action::Translate)),
+                    ..Default::default()
+                }
+                .into(),
+                SubMenu {
+                    label: "翻译风格".into(),
+                    submenu: prompt_items,
+                    ..Default::default()
+                }
+                .into(),
+                SubMenu {
+                    label: "供应商".into(),
+                    submenu: provider_items,
+                    ..Default::default()
+                }
+                .into(),
+                MenuItem::Separator,
+                StandardItem {
+                    label: "设置…".into(),
+                    icon_name: "emblem-system-symbolic".into(),
+                    activate: Box::new(|t: &mut Self| dispatch(&t.app, Action::Settings)),
+                    ..Default::default()
+                }
+                .into(),
+                StandardItem {
+                    label: "查看日志".into(),
+                    icon_name: "text-x-generic-symbolic".into(),
+                    activate: Box::new(|t: &mut Self| dispatch(&t.app, Action::OpenLog)),
+                    ..Default::default()
+                }
+                .into(),
+                CheckmarkItem {
+                    label: "开机自启动".into(),
+                    checked: s.autostart,
+                    activate: Box::new(|t: &mut Self| {
+                        autostart::set_enabled(&t.app, !t.snap.autostart);
+                        t.reload();
+                    }),
+                    ..Default::default()
+                }
+                .into(),
+                MenuItem::Separator,
+                StandardItem {
+                    label: "退出".into(),
+                    icon_name: "application-exit-symbolic".into(),
+                    activate: Box::new(|t: &mut Self| dispatch(&t.app, Action::Quit)),
+                    ..Default::default()
+                }
+                .into(),
+            ]
+        }
+    }
+
+    /// 位图渲染不出来时的兜底：告诉面板去哪个目录按名字找。
+    ///
+    /// 用 `dirs` 而不是手写 XDG —— 同一份代码里 `config.rs` / `logging.rs` 都是这个规矩。
+    fn icon_dir() -> String {
+        dirs::data_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join("icons/hicolor/scalable/apps")
+            .display()
+            .to_string()
+    }
+
+    /// 把内置 SVG 光栅化成 SNI 要的几档尺寸（理由见模块头）。
+    ///
+    /// 用 resvg 而不是 GTK 版那样用 GdkPixbuf：这个 crate 里没有 GTK，也不值得为一个
+    /// 图标把它拖回来。
+    fn render_icons() -> Vec<Icon> {
         let opt = resvg::usvg::Options::default();
         let tree = match resvg::usvg::Tree::from_data(ICON_SVG, &opt) {
             Ok(t) => t,
@@ -606,13 +893,6 @@ mod imp {
     #[cfg(not(target_os = "macos"))]
     const ICON_PNG: &[u8] = include_bytes!("../icons/32x32.png");
 
-    /// macOS 菜单栏用单色模板图。
-    ///
-    /// 模板图标只认 alpha，系统按菜单栏明暗自己上色。这里用简化的选区和镂空箭头，
-    /// 不把彩色应用图标硬压成单色（见 data/tray-mono.svg）。
-    #[cfg(target_os = "macos")]
-    const ICON_MONO_SVG: &[u8] = include_bytes!("../../data/tray-mono.svg");
-
     // 菜单项 id。带前缀的两类是动态项，id 里带着要切到哪个 provider / prompt。
     const ID_INPUT: &str = "input";
     const ID_TRANSLATE: &str = "translate";
@@ -637,64 +917,18 @@ mod imp {
     #[cfg(target_os = "macos")]
     const MONO_SIZE: u32 = 44;
 
-    /// 把单色 SVG 光栅化成不预乘的 RGBA。拆出来是为了能单测 —— 模板图标画糊了
-    /// （比如 mask 没生效导致全透明）在菜单栏上看不出来，只会"图标消失"。
+    /// 把单色 SVG 光栅化成不预乘的 RGBA。
+    ///
+    /// 薄薄一层包装，为的是给它一个能被单测抓住的名字 —— 模板图标画糊了
+    /// （mask 没生效导致全透明之类）在菜单栏上看不出来，只会"图标消失"。
     #[cfg(target_os = "macos")]
     fn mono_rgba() -> Result<Vec<u8>, String> {
-        use resvg::tiny_skia;
-
-        let opt = resvg::usvg::Options::default();
-        let tree = resvg::usvg::Tree::from_data(ICON_MONO_SVG, &opt)
-            .map_err(|e| format!("单色托盘图标解析失败：{e}"))?;
-        let mut pixmap = tiny_skia::Pixmap::new(MONO_SIZE, MONO_SIZE)
-            .ok_or("分配托盘图标位图失败".to_string())?;
-        let scale = tiny_skia::Transform::from_scale(
-            MONO_SIZE as f32 / tree.size().width(),
-            MONO_SIZE as f32 / tree.size().height(),
-        );
-        resvg::render(&tree, scale, &mut pixmap.as_mut());
-
-        // tiny-skia 出来的是**预乘** RGBA，Tauri 的 Image 要的是不预乘的
-        let mut rgba = Vec::with_capacity((MONO_SIZE * MONO_SIZE * 4) as usize);
-        for px in pixmap.pixels() {
-            let c = px.demultiply();
-            rgba.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
-        }
-        Ok(rgba)
+        super::rasterize(super::icons::MONO, MONO_SIZE).ok_or("单色托盘图标光栅化失败".to_string())
     }
 
     #[cfg(target_os = "macos")]
     fn tray_image() -> Result<Image<'static>, String> {
         Ok(Image::new_owned(mono_rgba()?, MONO_SIZE, MONO_SIZE))
-    }
-
-    #[cfg(all(test, target_os = "macos"))]
-    mod tests {
-        use super::*;
-
-        /// 模板图标只认 alpha。画成一片空白（mask 没生效之类）在菜单栏上是看不出来的
-        /// —— 表现只是"图标不见了"，很难往光栅化上想。这里把它钉死。
-        #[test]
-        fn 单色托盘图标要有内容也要有镂空() {
-            let rgba = mono_rgba().expect("光栅化失败");
-            let total = (MONO_SIZE * MONO_SIZE) as usize;
-            assert_eq!(rgba.len(), total * 4);
-
-            let opaque = rgba.chunks_exact(4).filter(|p| p[3] > 128).count();
-            let clear = rgba.chunks_exact(4).filter(|p| p[3] < 32).count();
-
-            // 选区条和角标约占画面两成；低于一成说明基本没画出来
-            assert!(
-                opaque * 10 > total,
-                "不透明像素只有 {opaque}/{total}，图标基本是空白的"
-            );
-            // 箭头是挖空的，加上四周留白，透明像素必然占大头；
-            // 全不透明说明 mask 没生效，那样在菜单栏上就是一坨黑块
-            assert!(
-                clear * 3 > total,
-                "透明像素只有 {clear}/{total}，箭头没被挖空，模板图标会变成黑块"
-            );
-        }
     }
 
     pub fn spawn(app: &AppHandle) -> Result<Inner, String> {
@@ -892,5 +1126,76 @@ mod imp {
                 MouseButton::Right => {}
             }
         }
+    }
+}
+
+/// 图标的光栅化。
+///
+/// 为什么值得单测：这三份图**画坏了都只表现成「图标不见了 / 很怪」**，在托盘或菜单栏
+/// 上根本看不出是哪一步出的问题，很难往光栅化上想。而且 `SMALL` 只有 Linux 构建会用，
+/// 没有测试的话它在别的机器上就是一段谁也验不了的资源。
+///
+/// 尺寸取的是**真实使用尺寸**，不是随便挑的：22 是 Linux 面板和 mac 菜单栏的实际点数，
+/// 44 是 Retina 下菜单栏的像素数。在放大图上什么都好看，问题只在真实尺寸下暴露。
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod icon_tests {
+    use super::*;
+
+    /// 有多少像素基本不透明 / 基本透明
+    fn profile(rgba: &[u8]) -> (usize, usize, usize) {
+        let total = rgba.len() / 4;
+        let opaque = rgba.chunks_exact(4).filter(|p| p[3] > 128).count();
+        let clear = rgba.chunks_exact(4).filter(|p| p[3] < 32).count();
+        (total, opaque, clear)
+    }
+
+    /// 每份图在自己的真实尺寸下都要「有内容」，不能是一片空白。
+    #[test]
+    fn 三份图标在真实尺寸下都画得出内容() {
+        for (name, svg, size) in [
+            ("应用图标", icons::APP, 48u32),
+            ("托盘小尺寸", icons::SMALL, 22),
+            ("菜单栏单色", icons::MONO, 44),
+        ] {
+            let rgba = rasterize(svg, size).unwrap_or_else(|| panic!("{name} 光栅化失败"));
+            let (total, opaque, _) = profile(&rgba);
+            assert!(
+                opaque * 10 > total,
+                "{name} 在 {size}px 下不透明像素只有 {opaque}/{total}，基本是空白的"
+            );
+        }
+    }
+
+    /// 模板图标只认 alpha：全不透明说明 mask 没生效，菜单栏上会变成一坨黑块。
+    #[test]
+    fn 菜单栏单色图的箭头必须是镂空的() {
+        let rgba = rasterize(icons::MONO, 44).expect("光栅化失败");
+        let (total, _, clear) = profile(&rgba);
+        assert!(
+            clear * 3 > total,
+            "透明像素只有 {clear}/{total}，箭头没被挖空，模板图标会变成黑块"
+        );
+    }
+
+    /// 小尺寸那份的存在理由就是「22px 下还读得清」。箭头镂空低于 2 像素就不再是洞，
+    /// 只是一道灰边 —— 用镂空面积占比兜住这条，别让后来的改动把它调回细线。
+    #[test]
+    fn 托盘小尺寸图在_22px_下箭头仍是可辨的镂空() {
+        let rgba = rasterize(icons::SMALL, 22).expect("光栅化失败");
+        let total = rgba.len() / 4;
+        // 深色底 + 薄荷色选区条 + 深色箭头：数"接近底色的暗像素"太脆，
+        // 改数选区条那片亮像素 —— 箭头挖得越实，亮像素越少。给一个上下界。
+        let mint = rgba
+            .chunks_exact(4)
+            .filter(|p| p[3] > 128 && p[1] > 150 && p[0] < 180)
+            .count();
+        assert!(
+            mint * 12 > total,
+            "选区条只剩 {mint}/{total} 像素，图形太小了"
+        );
+        assert!(
+            mint * 3 < total,
+            "选区条占了 {mint}/{total}，箭头没挖出来或太细"
+        );
     }
 }
