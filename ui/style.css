@@ -144,6 +144,8 @@ html.opaque .shell {
 }
 
 .card {
+  /* 定位上下文：切风格/供应商时旧译文的残影要浮在这里淡出（见 .output-ghost） */
+  position: relative;
   display: flex;
   min-height: 62px;
   border: 1px solid var(--ctp-surface1);
@@ -199,8 +201,11 @@ html.opaque .shell {
   color: var(--ctp-red);
 }
 
-/* 光标：流式输出时跟在末尾闪烁，让人知道还在写 */
-.output.streaming::after {
+/* 光标：流式输出时跟在末尾闪烁，让人知道还在写。
+ *
+ * 要等**真有文字了**才画（.typing 由第一个分片加上）。只看 .streaming 的话，
+ * 等首个 token 的那几秒里光标会和骨架屏一起出现，两个占位叠着，看着像出了错。 */
+.output.streaming.typing::after {
   content: "";
   display: inline-block;
   width: 2px;
@@ -284,5 +289,126 @@ html.opaque .shell {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- 动效 ---------- */
+
+/* 进场 / 退场。
+ *
+ * mac 上窗口是不透明的（要圆角只能保留系统标题栏，见 windows.rs），所以动画只能做在
+ * 网页内容上，不能靠窗口透明度——那条路在另两家能用，在 mac 上做不到，三家就不一致了。
+ * 统一在 .shell 上做，三个平台看到的是同一段动画。 */
+@keyframes shell-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+
+@keyframes shell-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.99);
+  }
+}
+
+.shell.enter {
+  animation: shell-in 150ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+html.leaving .shell {
+  animation: shell-out 110ms ease-in both;
+}
+
+/* 流式分片渐现。
+ *
+ * **起始透明度刻意不是 0。** 划词翻译最忌讳首字变慢，从 0 起等于让第一个 token 晚
+ * 一百多毫秒才看得见；0.15 起步既有"正在写"的观感，又不会把字藏起来。 */
+@keyframes chunk-in {
+  from {
+    opacity: 0.15;
+    transform: translateY(1px);
+  }
+}
+
+.output .chunk {
+  animation: chunk-in 120ms ease-out both;
+}
+
+/* 骨架屏：等首个 token 的那几百毫秒不该是一片空白 */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 3px;
+}
+
+.skeleton-line {
+  height: 11px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--ctp-surface1) 25%,
+    var(--ctp-surface2) 37%,
+    var(--ctp-surface1) 63%
+  );
+  background-size: 280% 100%;
+  animation: skeleton-sweep 1.3s ease-in-out infinite;
+}
+
+.skeleton-line:nth-child(2) {
+  width: 88%;
+  animation-delay: 90ms;
+}
+
+.skeleton-line:nth-child(3) {
+  width: 62%;
+  animation-delay: 180ms;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+/* 切风格 / 供应商时的交叉淡出。
+ *
+ * 新一轮翻译要立刻腾空输出区去接分片，旧译文没法留在原地慢慢淡。所以把它拓一份浮在
+ * 卡片里淡出：真正的输出区当场就空了，不会和新到的分片抢位置，也就没有竞态。 */
+.output-ghost {
+  position: absolute;
+  inset: 0;
+  padding: 10px 12px;
+  overflow: hidden;
+  color: var(--ctp-text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  animation: ghost-out 200ms ease both;
+}
+
+@keyframes ghost-out {
+  to {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+/* 系统里关掉了动效就别硬演。留 1ms 而不是 none，是为了 animationend 照样会触发——
+   残影的清理挂在那个事件上。 */
+@media (prefers-reduced-motion: reduce) {
+  .shell.enter,
+  html.leaving .shell,
+  .output .chunk,
+  .skeleton-line,
+  .output-ghost {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

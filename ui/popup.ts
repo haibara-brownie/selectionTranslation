@@ -79,6 +79,71 @@ function setStatus(text: string, isError = false) {
 function setBusy(busy: boolean) {
   ui.spinner.hidden = !busy;
   ui.output.classList.toggle("streaming", busy);
+  // 收尾时把"已经在写"的标记摘掉，下一轮重新由第一个分片打上
+  if (!busy) ui.output.classList.remove("typing");
+}
+
+/** 弹窗外壳。进场/退场动画都做在它身上（mac 上窗口不透明，动不了窗口本身）。 */
+const shell = document.querySelector<HTMLElement>(".shell")!;
+
+/** 退场动画的时长，和 style.css 里 shell-out 对齐 */
+const LEAVE_MS = 110;
+let leaving = false;
+
+/**
+ * 重播进场动画。
+ *
+ * 常驻模式下窗口是复用的，第二次按快捷键不会重建 webview —— 不显式重播的话，
+ * 只有第一次弹出来有进场，之后都是硬出。先摘掉类再强制重排才能重播，
+ * 同一帧内摘了又加浏览器会当成没变过。
+ */
+function playEnter() {
+  document.documentElement.classList.remove("leaving");
+  leaving = false;
+  shell.classList.remove("enter");
+  void shell.offsetWidth;
+  shell.classList.add("enter");
+}
+
+/** 先把退场动画放完再真的关窗，否则用户根本看不见它 */
+async function dismiss() {
+  if (leaving) return;
+  leaving = true;
+  document.documentElement.classList.add("leaving");
+  await new Promise((r) => setTimeout(r, LEAVE_MS));
+  await win.close();
+}
+
+/** 等首个 token 的那几百毫秒里的占位 */
+function showSkeleton() {
+  const box = document.createElement("div");
+  box.className = "skeleton";
+  for (let i = 0; i < 3; i++) {
+    const line = document.createElement("div");
+    line.className = "skeleton-line";
+    box.append(line);
+  }
+  ui.output.replaceChildren(box);
+}
+
+function clearSkeleton() {
+  ui.output.querySelector(".skeleton")?.remove();
+}
+
+/**
+ * 把当前译文拓一份浮在卡片里淡出。
+ *
+ * 换风格/换供应商会立刻用新设置重译同一段文字，输出区必须当场腾空去接新分片，
+ * 旧译文没法留在原地慢慢淡。拓一份浮层就没有这个矛盾，也不会和新分片抢位置。
+ */
+function crossFadeOut() {
+  const old = ui.output.textContent ?? "";
+  if (old.trim() === "") return;
+  const ghost = document.createElement("div");
+  ghost.className = "output-ghost";
+  ghost.textContent = old;
+  ui.output.parentElement?.append(ghost);
+  ghost.addEventListener("animationend", () => ghost.remove());
 }
 
 function updateCount() {
@@ -131,8 +196,9 @@ async function translate() {
   }
 
   const mine = ++run;
-  ui.output.textContent = "";
+  crossFadeOut(); // 旧译文拓一份淡出，输出区当场腾空
   ui.output.classList.remove("error");
+  showSkeleton();
   setBusy(true);
   setStatus("翻译中…");
 
@@ -141,12 +207,23 @@ async function translate() {
     if (mine !== run) return; // 已经被更新的一轮取代了
 
     switch (ev.kind) {
-      case "delta":
-        ui.output.textContent += ev.text;
+      case "delta": {
+        clearSkeleton();
+        // 有字了才让光标出来，免得和骨架屏叠着
+        ui.output.classList.add("typing");
+        // 每个分片单独包一层，才能逐段渐现；textContent 读出来仍是完整译文，
+        // 复制那条路不受影响
+        const chunk = document.createElement("span");
+        chunk.className = "chunk";
+        chunk.textContent = ev.text;
+        ui.output.append(chunk);
         // 只在已经贴着底部时才跟着滚，否则会打断用户往回看
         if (isNearBottom(ui.output)) ui.output.scrollTop = ui.output.scrollHeight;
         break;
+      }
       case "done":
+        // 一个分片都没来过（空响应）时骨架屏还挂着，收尾时兜一下
+        clearSkeleton();
         setBusy(false);
         setStatus(providerLabel());
         break;
@@ -192,7 +269,7 @@ function wire() {
 
   ui.retranslate.addEventListener("click", translate);
   ui.copy.addEventListener("click", copyOutput);
-  ui.close.addEventListener("click", () => win.close());
+  ui.close.addEventListener("click", dismiss);
   ui.settings.addEventListener("click", async () => {
     try {
       await invoke("open_settings", { page: null });
@@ -218,7 +295,7 @@ function wire() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      win.close();
+      dismiss();
       return;
     }
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -238,7 +315,7 @@ function wire() {
 async function apply(req: TranslateRequest) {
   if (req.inputMode) {
     ui.source.value = "";
-    ui.output.textContent = "";
+    ui.output.replaceChildren();
     updateCount();
     ui.source.focus();
     return;
@@ -285,9 +362,11 @@ async function boot() {
     } catch {
       // 刷不动就用旧的接着跑，别把这一轮翻译卡死
     }
+    playEnter();
     await apply(ev.payload);
   });
 
+  playEnter();
   await apply(launch);
 }
 
