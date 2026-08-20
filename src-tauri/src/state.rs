@@ -38,6 +38,13 @@ pub struct UiState {
     pub target_lang: String,
     /// 一个供应商都没配时前端要引导用户去设置，而不是干等
     pub configured: bool,
+    /// 首次使用提示还没被关掉。前端据此决定要不要盖那一层。
+    pub onboarding: bool,
+    /// 当前生效的两组全局快捷键，(翻译, 设置)。
+    ///
+    /// **首次提示里的快捷键必须来自这里，不能在前端写死**：三个平台默认值不同，
+    /// 用户还能自己改 —— 一份说谎的教程比没有更糟。
+    pub hotkeys: (String, String),
 }
 
 /// 主题设成"跟随系统"时，用哪个风味。
@@ -87,6 +94,8 @@ impl UiState {
             active_provider: cfg.active_provider.clone(),
             target_lang: cfg.target_lang.clone(),
             configured: !cfg.providers.is_empty(),
+            onboarding: !cfg.onboarded,
+            hotkeys: crate::hotkey::current(),
         }
     }
 }

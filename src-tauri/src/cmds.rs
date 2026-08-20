@@ -110,3 +110,14 @@ pub fn set_active_model(provider_id: String, model: String) -> Result<(), String
     p.model = model;
     cfg.save().map_err(|e| format!("配置写入失败：{e}"))
 }
+
+/// 关掉首次使用提示（用户点了「我会用」）。
+///
+/// 单独一个命令而不是塞进 `save_config`：那条路要前端把整份配置传上来，
+/// 而弹窗手里根本没有完整配置（它只拿了首屏要的那点东西）。
+#[tauri::command]
+pub fn dismiss_onboarding() -> Result<(), String> {
+    let mut cfg = Config::load();
+    cfg.onboarded = true;
+    cfg.save().map_err(|e| format!("配置写入失败：{e}"))
+}

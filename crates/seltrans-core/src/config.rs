@@ -71,6 +71,12 @@ pub struct Config {
     /// system / latte / frappe / macchiato / mocha
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// 首次使用提示是否已经关掉。
+    ///
+    /// 缺省 `false`，所以**老配置升上来也会看到一次** —— 这是有意的：三平台的默认快捷键
+    /// 在这一轮改过，老用户同样需要被告知一次。
+    #[serde(default)]
+    pub onboarded: bool,
     /// 全局快捷键，留空表示用内置默认值。
     ///
     /// **Linux 上这两个字段不生效**：那边快捷键归合成器管（Wayland 没有全局快捷键协议），
@@ -140,6 +146,7 @@ impl Default for Config {
             target_lang: default_lang(),
             selection_mode: default_sel_mode(),
             theme: default_theme(),
+            onboarded: false,
             hotkey_translate: String::new(),
             hotkey_settings: String::new(),
             font_latin: String::new(),

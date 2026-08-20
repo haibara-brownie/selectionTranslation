@@ -194,6 +194,7 @@ fn main() {
             cmds::translate,
             cmds::set_active_prompt,
             cmds::set_active_model,
+            cmds::dismiss_onboarding,
             settings_cmds::load_config,
             settings_cmds::save_config,
             settings_cmds::theme_css,
