@@ -8,7 +8,7 @@
  * 命名刻意跟 libadwaita 对齐，方便和 GTK 版的 settings_ui.rs 对照着看。
  */
 
-import { enhanceSelect } from "./dropdown";
+import { closeFloating, enhanceSelect, openFloating } from "./dropdown";
 
 export function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -144,17 +144,19 @@ export function searchComboRow(
   };
   const open = () => {
     render(""); // 打开时先显示全部，而不是拿当前值当搜索词
-    list.hidden = false;
+    // 挂到 body 上做浮层：就地绝对定位会被 .rows 的 overflow: hidden 裁掉
+    openFloating(input, list);
   };
   const close = () => {
-    list.hidden = true;
+    closeFloating(wrap, list);
     input.value = labelOf(value); // 没选中就把输入框恢复成当前值，别留下半截搜索词
   };
 
   input.addEventListener("focus", open);
   input.addEventListener("input", () => {
-    list.hidden = false;
     render(input.value);
+    // 过滤后行数变了，高度跟着变，得重新摆一次
+    openFloating(input, list);
   });
   input.addEventListener("blur", () => setTimeout(close, 120));
   input.addEventListener("keydown", (e) => {

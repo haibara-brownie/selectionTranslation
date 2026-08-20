@@ -75,11 +75,12 @@
 /* ---------- 弹层 ---------- */
 
 .combo-list {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 5px);
-  right: 0;
-  left: 0;
+  /* 定位由 JS 负责：浮层挂在 body 上，top/left 每次打开时按锚点算好写进来
+     （见 lib/dropdown.ts 的 placeFloating）。
+     就地绝对定位会被祖先裁掉 —— 设置页的 .rows 为了圆角开了 overflow: hidden，
+     外层 .pane 又是 overflow-y: auto，21 个语种实测只露得出 2 个。 */
+  position: fixed;
+  z-index: 200;
   max-height: 280px;
   padding: 5px;
   border: 1px solid var(--ctp-surface1);
@@ -91,29 +92,16 @@
   animation: combo-in 130ms ease both;
 }
 
-/* 往上弹。弹窗只有 480 高，底部那个「模型」下拉一律往下弹会被
-   .shell 的 overflow: hidden 整个裁掉，用户看到的是「点了没反应」。 */
-.dd-list.up {
-  top: auto;
-  bottom: calc(100% + 5px);
+/* 翻到锚点上方时换个进场方向；位置本身由 JS 算 */
+.combo-list.up {
   animation-name: combo-in-up;
 }
 
-/* 触发器可能比列表窄（比如顶栏那个 chip），列表按内容撑开，但别超出窗口。
-   默认贴左边生长；贴右边由 place() 按剩余空间决定（见下）。 */
+/* 列表按内容撑开，但别超出窗口。min-width 由 JS 按锚点宽度写，
+   保证浮层至少和触发器一样宽，看着才像它的下拉。 */
 .dd-list {
-  right: auto;
-  left: 0;
-  min-width: 100%;
   width: max-content;
   max-width: min(320px, calc(100vw - 24px));
-}
-
-/* 往左生长。设置页的下拉都在行的右端，一律向右撑会把页面撑出横向滚动条 ——
-   容器一滚，行标题就被推出可视区（"目标语言"只剩"…哪种语言"）。实测踩过。 */
-.dd-list.right {
-  right: 0;
-  left: auto;
 }
 
 @keyframes combo-in {

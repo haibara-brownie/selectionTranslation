@@ -26,10 +26,72 @@
  * 现在推广到全部下拉，应用内和平台间就都统一了。
  */
 
-/** 打开时列表离触发器的间距，和 CSS 里的 `top: calc(100% + 5px)` 对齐 */
+/** 浮层离锚点的间距 */
 const GAP = 5;
+/** 浮层离窗口边缘至少留这么多 */
+const EDGE = 8;
+/** 浮层高度的上下限：太矮看不清几项，太高会盖住半个窗口 */
+const MIN_H = 120;
+const MAX_H = 280;
 /** 连续按键当作「输入首字母跳转」的间隔上限 */
 const TYPEAHEAD_MS = 700;
+
+/**
+ * 把浮层按锚点摆好。**浮层必须已经挂在 `document.body` 上**。
+ *
+ * # 为什么不能就地绝对定位
+ *
+ * 设置页的行卡片 `.rows` 为了圆角开了 `overflow: hidden`，外面的 `.pane` 又是
+ * `overflow-y: auto` —— 绝对定位的浮层会被这两层**裁掉**。实测：「目标语言」有 21 个
+ * 语种，展开后只露出 2 个，看着就像画在卡片里的一小块，而不是浮在上面的层。
+ *
+ * 挂到 `body` 上用 `fixed` 定位，才真正脱离所有祖先的裁剪和层叠上下文。代价是位置得
+ * 自己算，而且锚点一动（窗口缩放、面板滚动）就要重算。
+ */
+export function placeFloating(anchor: HTMLElement, list: HTMLElement): void {
+  const a = anchor.getBoundingClientRect();
+
+  // 至少和锚点一样宽，看着才像它的下拉
+  list.style.minWidth = `${a.width}px`;
+
+  // 先放开高度限制量出「本来想多高」，再决定往哪边弹 —— 带着上一次的 maxHeight 量，
+  // 量到的是被压过的高度，会一直判成「放得下」
+  list.style.maxHeight = "";
+  const need = list.offsetHeight;
+
+  const below = window.innerHeight - a.bottom - GAP - EDGE;
+  const above = a.top - GAP - EDGE;
+  // 下面放不下、而上面更宽裕时才翻上去
+  const up = need > below && above > below;
+
+  list.classList.toggle("up", up);
+  list.style.maxHeight = `${Math.max(MIN_H, Math.min(MAX_H, up ? above : below))}px`;
+
+  // 压完高度再量，否则翻上去时的 top 会算错
+  const w = list.offsetWidth;
+  const h = list.offsetHeight;
+  // 横向：贴着锚点左沿，右边放不下就整体左移，但不越过窗口左边缘
+  list.style.left = `${Math.max(EDGE, Math.min(a.left, window.innerWidth - w - EDGE))}px`;
+  list.style.top = `${up ? Math.max(EDGE, a.top - GAP - h) : a.bottom + GAP}px`;
+}
+
+/** 挂到 body 上显示出来并摆好位置 */
+export function openFloating(anchor: HTMLElement, list: HTMLElement): void {
+  document.body.append(list);
+  list.hidden = false;
+  placeFloating(anchor, list);
+}
+
+/**
+ * 收起来，并把浮层挪回它原来的宿主。
+ *
+ * 挪回去是为了让浮层的生命周期跟着宿主走：设置页每次切标签都会 `replaceChildren` 重建
+ * 整页，宿主没了浮层也跟着没。留在 body 上的话，切几次页就在 body 底下堆一堆孤儿。
+ */
+export function closeFloating(home: HTMLElement, list: HTMLElement): void {
+  list.hidden = true;
+  home.append(list);
+}
 
 /** 已经接管过的不再重复接管（`renderState` 会反复调） */
 const DONE = new WeakSet<HTMLSelectElement>();
@@ -120,42 +182,16 @@ export function enhanceSelect(select: HTMLSelectElement): void {
     );
   };
 
-  /**
-   * 决定往下弹还是往上弹。
-   *
-   * 弹窗窗口只有 480 高，底部状态栏那个「模型」下拉如果一律往下弹，会整个被
-   * `.shell { overflow: hidden }` 裁掉 —— 用户看到的是「点了没反应」。
-   */
-  const place = () => {
-    list.classList.remove("up", "right");
-    const t = trigger.getBoundingClientRect();
-
-    // 横向：默认贴触发器左边往右生长；右边放不下就改成贴右边往左长。
-    // 不做这一步的话，设置页里那些靠右的下拉会把页面撑出横向滚动条，容器一滚，
-    // 行标题就被推出可视区。
-    const EDGE = 8;
-    if (t.left + list.offsetWidth > window.innerWidth - EDGE) list.classList.add("right");
-
-    const below = window.innerHeight - t.bottom - GAP;
-    const above = t.top - GAP;
-    const need = list.offsetHeight;
-    // 下面放不下、而上面更宽裕时才翻上去
-    if (need > below && above > below) list.classList.add("up");
-    // 两边都放不下就取宽的那侧，并把自己压到能放下为止
-    list.style.maxHeight = `${Math.max(120, Math.min(280, Math.max(below, above)))}px`;
-  };
-
   const open = () => {
     if (trigger.disabled) return;
     render();
-    list.hidden = false;
+    openFloating(trigger, list);
     trigger.setAttribute("aria-expanded", "true");
-    place();
     setActive(select.selectedIndex);
   };
 
   const close = () => {
-    list.hidden = true;
+    closeFloating(box, list);
     trigger.setAttribute("aria-expanded", "false");
     active = -1;
     typed = "";
@@ -198,18 +234,24 @@ export function enhanceSelect(select: HTMLSelectElement): void {
     }
   });
 
-  // 点到别处就收起来。用 pointerdown 而不是 click，跟 item 的 mousedown 顺序才对得上
+  // 点到别处就收起来。用 pointerdown 而不是 click，跟 item 的 mousedown 顺序才对得上。
+  // 浮层现在挂在 body 上，不再是 box 的后代，所以两边都要放过
   document.addEventListener("pointerdown", (e) => {
-    if (!list.hidden && !box.contains(e.target as Node)) close();
+    const t = e.target as Node;
+    if (!list.hidden && !box.contains(t) && !list.contains(t)) close();
   });
-  window.addEventListener("resize", () => !list.hidden && place());
+
+  window.addEventListener("resize", () => !list.hidden && placeFloating(trigger, list));
+  // 浮层是 fixed 定位的，锚点跟着面板滚走了它不会自己动，会脱锚悬在半空。
+  // 用捕获阶段才能听到 .pane 这种内层滚动容器的滚动。
+  window.addEventListener("scroll", () => !list.hidden && placeFloating(trigger, list), true);
 
   // 调用方是整批 replaceChildren 换选项的，没有事件可听，只能观察
   new MutationObserver(() => {
     syncTrigger();
     if (!list.hidden) {
       render();
-      place();
+      placeFloating(trigger, list);
     }
   }).observe(select, {
     childList: true,
