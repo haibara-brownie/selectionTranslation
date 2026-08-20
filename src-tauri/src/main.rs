@@ -17,14 +17,19 @@ mod windows;
 use seltrans_core::logging;
 use windows::TranslateRequest;
 
-/// 首次启动时前端要的东西，起来后用 `launch_args` 命令取。
+/// 新窗口起来后要的东西，前端用 `launch_args` 命令取。
 ///
 /// 之所以不走 URL 参数：待翻译的文本可能很长、可能带任意字符，塞进 URL 要转义两次，
 /// 出了问题极难排查。放在 Rust 侧让前端来取，文本原样不动。
 ///
 /// 里面的 `text` **已经是取好词的结果**（取词必须赶在窗口拿到焦点之前，见
 /// `windows::prepare`）。
-struct Launch(std::sync::Mutex<TranslateRequest>);
+///
+/// **这是一个会被改写的槽位，不是「进程启动参数」。** 每次新建弹窗前都由
+/// `windows::open_popup` 写入当轮的内容 —— 托盘常驻模式下进程启动时这里是空的，
+/// 只用启动值的话，常驻后的第一次触发会开出一个空弹窗（取词成功了，文本却丢在
+/// 新建窗口这条路上）。
+pub struct Launch(pub std::sync::Mutex<TranslateRequest>);
 
 #[tauri::command]
 fn launch_args(state: tauri::State<'_, Launch>) -> TranslateRequest {
@@ -152,7 +157,7 @@ fn main() {
     };
     let boot = (cmd.clone(), req.clone(), page);
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // single-instance 必须第一个注册（官方要求）。第二个进程的 argv 会送到这里，
         // 我们照常解析一遍再派活 —— 这就是 Wayland 下快捷键的通路：
         // 合成器 spawn 一个新进程，它把意图递给常驻实例然后自己退出。
@@ -168,7 +173,11 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             // 自启起来的是常驻模式，不是弹窗
             Some(vec!["tray"]),
-        ))
+        ));
+
+    // 全局快捷键插件（Linux 上是空操作，理由见 hotkey.rs）。
+    // 必须在 setup() 里调 hotkey::register 之前挂上，否则 mac / Windows 一启动就 abort。
+    hotkey::plugin(builder)
         .manage(Launch(std::sync::Mutex::new(req)))
         // 托盘模式常驻：关窗口只藏不销毁，下次按快捷键立刻就出来
         .manage(windows::Resident(tray_mode))
@@ -199,6 +208,17 @@ fn main() {
             settings_cmds::set_autostart,
         ])
         .setup(move |app| {
+            // mac：常驻托盘的工具不该占 Dock 图标，也不该在启动时把前台应用挤下去。
+            //
+            // Accessory 等价于 Info.plist 里的 LSUIElement，但走代码设置能跟着 Tauri 的
+            // 生命周期走，不必额外维护一份 plist 覆盖。窗口照样能开、能拿焦点 ——
+            // Accessory 只是说"我不在 Dock 和 ⌘Tab 里露面"。
+            //
+            // 另两个平台没有对应概念：Linux 的托盘由 StatusNotifierItem 管，
+            // Windows 的托盘程序本来就不占任务栏。
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             let handle = app.handle().clone();
 
             if let Err(e) = tray::spawn(&handle) {

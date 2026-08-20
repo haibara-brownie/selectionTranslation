@@ -52,6 +52,62 @@ pub fn prepare(mut req: TranslateRequest) -> TranslateRequest {
 /// 常驻模式标记。常驻时关窗口只是藏起来，不销毁 webview。
 pub struct Resident(pub bool);
 
+/// 弹窗离屏幕边缘的留白，逻辑像素。
+#[cfg(not(target_os = "linux"))]
+const MARGIN: f64 = 24.0;
+
+/// 把弹窗摆到「鼠标所在那块屏」的右上角。
+///
+/// # 为什么需要它
+///
+/// Linux 上摆窗口不归客户端管 —— Wayland 下应用没权限摆自己，niri 按 app-id 匹配的
+/// window-rule 会把它钉在右上角（见 `data/niri-snippet.kdl`）。**mac 和 Windows 没有
+/// 这个机制，于是谁都不管**，窗口落在系统默认的层叠位置上，README 承诺的「右上角浮出
+/// 译文」在这两家上不成立。实测 mac 上落在 (620, 188)，屏幕逻辑宽 1512，偏中间。
+///
+/// # 为什么按鼠标所在的屏，而不是主屏
+///
+/// 多显示器时，用户正在看的是鼠标那块屏。译文弹到另一块屏上等于没弹。
+/// 拿不到鼠标位置就退回窗口当前所在的屏，再拿不到就放弃摆位（保持系统默认），
+/// 摆不准也好过不显示。
+///
+/// # 为什么只在创建时摆一次
+///
+/// 常驻模式下窗口是复用的。用户要是把它拖到别处，说明他想让它待在那儿；每次都强行拽
+/// 回右上角是跟用户较劲。Linux 那边由合成器每次强制，是合成器的策略，不必强求一致。
+#[cfg(not(target_os = "linux"))]
+fn place_top_right(app: &AppHandle, win: &WebviewWindow) {
+    use tauri::PhysicalPosition;
+
+    let monitor = app
+        .cursor_position()
+        .ok()
+        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+        .or_else(|| win.current_monitor().ok().flatten());
+
+    let Some(monitor) = monitor else {
+        seltrans_core::logging::warn("拿不到显示器信息，弹窗位置交给系统默认");
+        return;
+    };
+
+    let Ok(size) = win.outer_size() else {
+        seltrans_core::logging::warn("拿不到窗口尺寸，弹窗位置交给系统默认");
+        return;
+    };
+
+    // 用可用区域而不是整块屏：mac 顶上有菜单栏、Windows 可能有任务栏，
+    // 按整块屏算会把窗口塞到它们底下去
+    let area = monitor.work_area();
+    let margin = (MARGIN * monitor.scale_factor()) as i32;
+
+    let x = area.position.x + area.size.width as i32 - size.width as i32 - margin;
+    let y = area.position.y + margin;
+
+    if let Err(e) = win.set_position(PhysicalPosition::new(x, y)) {
+        seltrans_core::logging::warn(&format!("摆放弹窗失败：{e}"));
+    }
+}
+
 /// 打开（或复用）翻译弹窗
 pub fn open_popup(app: &AppHandle, req: TranslateRequest) -> tauri::Result<WebviewWindow> {
     if let Some(win) = app.get_webview_window(POPUP) {
@@ -60,6 +116,16 @@ pub fn open_popup(app: &AppHandle, req: TranslateRequest) -> tauri::Result<Webvi
         // 窗口是复用的，前端还停在上一轮的内容上，得告诉它换一批
         let _ = win.emit(EVENT_TRANSLATE, req);
         return Ok(win);
+    }
+
+    // 新建这条路上前端收不到 `EVENT_TRANSLATE`（它还没挂上监听器），拿的是
+    // `launch_args`。而 `Launch` 里存的是**进程启动时**那份 —— 托盘常驻模式下是空的。
+    // 不在这里写进去，常驻后的第一次触发就会开出一个空弹窗：取词成功了，文本却丢在
+    // 这一步。实测过，第二次起才正常（那时走的是上面的复用分支）。
+    if let Some(launch) = app.try_state::<crate::Launch>()
+        && let Ok(mut slot) = launch.0.lock()
+    {
+        *slot = req;
     }
 
     let cfg = Config::load();
@@ -83,6 +149,10 @@ pub fn open_popup(app: &AppHandle, req: TranslateRequest) -> tauri::Result<Webvi
     let builder = builder.initialization_script("document.documentElement.classList.add('opaque')");
 
     let win = builder.build()?;
+
+    // 摆到鼠标那块屏的右上角。Linux 上这事归合成器，不在这里做。
+    #[cfg(not(target_os = "linux"))]
+    place_top_right(app, &win);
 
     // 常驻模式下按 Esc / 点 ✕ 只藏窗口。重建一个 webview 要几百毫秒，
     // 而划词翻译的全部价值就在于按下快捷键就出来。

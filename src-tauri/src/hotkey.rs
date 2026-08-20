@@ -19,13 +19,61 @@
 //!
 //! mac / Windows 上才由这个模块注册。
 
-/// 默认快捷键。跟 Linux 上 niri 配置里那两条保持一致，用户换平台时肌肉记忆还在。
+/// 默认快捷键。
 ///
-/// `CmdOrCtrl` 会在 mac 上映射成 ⌘、在 Windows 上映射成 Ctrl。
+/// # 为什么不跟 Linux 那两条对齐
+///
+/// 早先这里是 `CmdOrCtrl+Shift+T` / `CmdOrCtrl+Alt+T`，为的是「用户换平台时肌肉记忆
+/// 还在」。这个理由撑不住，因为**全局快捷键在 mac 和 Windows 上是系统级独占的**：
+/// 注册上之后，所有应用里的这个键都归我们，别人再也收不到。
+///
+/// 而 `⌘⇧T`（mac）和 `Ctrl+Shift+T`（Windows）**恰好是所有浏览器的「重新打开关闭的
+/// 标签页」**，还有编辑器、文件管理器在用。装上这个划词翻译，代价是浏览器少一个人人
+/// 都在用的功能——为了肌肉记忆去换掉用户已有的肌肉记忆，不划算。
+/// `⌘⌥T` 同理：Safari / 访达 / 邮件里是「显示或隐藏工具栏」。
+///
+/// Linux 不受影响：那边快捷键归合成器管（见模块头），niri 配置里 `Mod+Shift+T` 是
+/// 合成器自己拦下来的，不存在独占别人按键的问题，所以 `data/niri-snippet.kdl` 不用改。
+///
+/// # 为什么是 `Alt+Shift`
+///
+/// mac 上映射成 `⌥⇧`、Windows 上是 `Alt+Shift`，两边这一组都少有人占。同时它跟 Linux
+/// 那条 `Mod+Shift+T` 只差一个修饰键，肌肉记忆基本还在——**在不抢别人按键的前提下**
+/// 尽量对齐，而不是为了对齐去抢。
+///
+/// 设置页沿用同一组修饰键、换成逗号，跟「偏好设置 = ⌘,」的习惯对齐；这样两个键属于
+/// 同一个心理分组，好记。
+///
+/// **这仍然是写死的默认值，仍然可能撞上别人**（装了 Bob、Raycast 并自定义过之类）。
+/// 撞上时 `register` 返回 Err，程序照常跑，托盘和命令行不受影响，但用户没法自己改键
+/// ——「快捷键可配置」另开一张票。
 #[cfg(not(target_os = "linux"))]
-const TRANSLATE: &str = "CmdOrCtrl+Shift+T";
+const TRANSLATE: &str = "Alt+Shift+T";
 #[cfg(not(target_os = "linux"))]
-const SETTINGS: &str = "CmdOrCtrl+Alt+T";
+const SETTINGS: &str = "Alt+Shift+Comma";
+
+/// 把全局快捷键插件挂到 builder 上，Linux 上是恒等变换。
+///
+/// 单独开一个函数而不是在 `main.rs` 里写 cfg：这个模块已经是「快捷键归谁管」的唯一
+/// 去处，插件注册也该留在这儿，别让 `main.rs` 再长出一段平台分叉。
+///
+/// **漏掉这一步的后果不是「快捷键不好使」，是开机就崩。** `register` 里的
+/// `app.global_shortcut()` 底下是 `state::<GlobalShortcut>()`，插件没 manage 过就 panic；
+/// 而它跑在 `did_finish_launching` 这个 `extern "C"` 回调里，属于 non-unwinding panic，
+/// 进程当场 abort —— `register` 返回 `Result` 让调用方「失败也继续跑」的那层兜底
+/// 根本够不着。mac 上实测过一次，应用连窗口都没画出来。
+///
+/// Linux 分支连插件都不引入：Wayland 没有全局快捷键协议，注册会「成功」但回调永不
+/// 触发（见模块头），挂上去只会让日志显得一切正常。
+#[cfg(target_os = "linux")]
+pub fn plugin<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    builder
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn plugin<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    builder.plugin(tauri_plugin_global_shortcut::Builder::new().build())
+}
 
 /// Linux：什么都不做。快捷键归合成器管。
 ///
@@ -76,8 +124,14 @@ pub fn describe() -> &'static str {
         "由合成器提供（Wayland 没有全局快捷键协议）。改键请编辑 \
          ~/.config/niri/selectiontranslation.kdl"
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
-        "Ctrl/⌘+Shift+T 翻译选中文本，Ctrl/⌘+Alt+T 打开设置"
+        "⌥⇧T 翻译选中文本，⌥⇧, 打开设置。刻意避开 ⌘⇧T / ⌘⌥T —— \
+         全局快捷键是系统级独占的，占了它们等于废掉浏览器的「重开标签页」和「显示工具栏」"
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        "Alt+Shift+T 翻译选中文本，Alt+Shift+, 打开设置。刻意避开 Ctrl+Shift+T —— \
+         全局快捷键是系统级独占的，占了它等于废掉浏览器的「重新打开关闭的标签页」"
     }
 }
