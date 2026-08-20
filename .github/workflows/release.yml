@@ -76,6 +76,14 @@ jobs:
             xattr -dr com.apple.quarantine /Applications/seltrans.app
             ```
 
+          **macOS 的辅助功能授权** —— 划词翻译要读你选中的文字，必须去
+          「系统设置 → 隐私与安全性 → 辅助功能」里勾选 seltrans。
+          第一次按快捷键时系统会主动弹请求。
+
+          **升级之后要重新勾一次。** 未签名的应用每次构建出来的代码签名摘要都不一样，
+          系统据此认定「这不是之前授权过的那个应用」，于是把授权作废 —— 表现是升级后
+          按快捷键没反应，看着像程序坏了。这是未签名应用的固有限制，不是程序出了问题。
+
           **Windows** —— SmartScreen 弹「Windows 已保护你的电脑」。
           点左下角的「更多信息」，再点「仍要运行」。
 
@@ -84,8 +92,11 @@ jobs:
 
           ## 已知限制
 
-          - Linux 上全局快捷键必须由合成器触发（Wayland 没有全局快捷键协议），
-            配置方法见 README；macOS / Windows 上在设置里直接配。
+          - 全局快捷键目前是写死的：macOS / Windows 上是 `Alt+Shift+T` 翻译、
+            `Alt+Shift+,` 打开设置；被别的程序占用了暂时改不了（设置界面还没有改键入口）。
+            Linux 上快捷键由合成器触发（Wayland 没有全局快捷键协议），改键编辑
+            `~/.config/niri/selectiontranslation.kdl`，配置方法见 README。
+          - macOS 升级后需要重新授权辅助功能，原因见上。
           - 兜底取词只还原纯文本剪贴板，富文本和图片还不回去。
           NOTES
 
