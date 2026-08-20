@@ -61,19 +61,29 @@ for arg in "$@"; do
 done
 
 # ---- 依赖检查 ----
+# 装的是 Tauri 版：界面是 HTML/CSS/TS，由 WebKitGTK 渲染。
+# libgtk-3 不是"界面还是 GTK"，那是 WebKitGTK 的开窗层（mac 上对应 AppKit）。
 command -v cargo >/dev/null || { warn "没有 cargo，请先装 rust：pac rust"; exit 1; }
-pkg-config --exists gtk4 || { warn "缺少 gtk4 开发文件：pac gtk4"; exit 1; }
-pkg-config --exists libadwaita-1 || { warn "缺少 libadwaita：pac libadwaita"; exit 1; }
+command -v pnpm  >/dev/null || { warn "没有 pnpm，前端编不了：pac pnpm"; exit 1; }
+pkg-config --exists webkit2gtk-4.1 || { warn "缺少 webkit2gtk-4.1：pac webkit2gtk-4.1"; exit 1; }
+pkg-config --exists gtk+-3.0 || { warn "缺少 gtk3：pac gtk3"; exit 1; }
 command -v wl-paste >/dev/null || warn "没有 wl-paste，主选区取词会不可用：pac wl-clipboard"
 command -v ydotool  >/dev/null || warn "没有 ydotool，Ctrl+C 兜底取词会不可用：pac ydotool"
 
 # ---- 编译 ----
+#
+# **必须走 tauri build，不能用 cargo build --release。**
+# Tauri 靠 `tauri` 依赖有没有开 custom-protocol 特性判断 dev / 生产
+# （它的 build.rs 里就一行 `let dev = !has_feature("custom-protocol")`），
+# 只有 tauri build 会加。cargo 编出来的会去连 devUrl，窗口一片空白。
 info "编译 release 版本（第一次会久一点）"
-cargo build --release --manifest-path "${REPO_DIR}/Cargo.toml"
+( cd "$REPO_DIR" && pnpm install --frozen-lockfile && pnpm tauri build --no-bundle )
 
 # ---- 安装二进制 ----
+#
+# 装成 `seltrans` 这个名字，niri 里的 `spawn "seltrans"` 就不用改。
 mkdir -p "$BIN_DIR"
-install -m755 "${REPO_DIR}/target/release/seltrans" "${BIN_DIR}/seltrans"
+install -m755 "${REPO_DIR}/target/release/seltrans-tauri" "${BIN_DIR}/seltrans"
 ok "已安装 ${BIN_DIR}/seltrans（$(du -h "${BIN_DIR}/seltrans" | cut -f1)）"
 
 case ":${PATH}:" in

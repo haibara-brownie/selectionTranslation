@@ -11,7 +11,8 @@ Terminal=false
 Categories=Utility;Translation;
 Keywords=translate;translation;划词;翻译;seltrans;
 StartupNotify=false
-StartupWMClass=xyz.brownie.SelectionTranslation.Settings
+# Tauri 版三个窗口共用一个 app-id（GTK 版当年是 .Popup / .Settings 两个）
+StartupWMClass=xyz.brownie.SelectionTranslation
 Actions=Translate;
 
 [Desktop Action Translate]
