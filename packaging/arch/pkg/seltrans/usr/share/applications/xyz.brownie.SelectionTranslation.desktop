@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=划词翻译
+Name[en]=Selection Translation
+GenericName=Translation
+Comment=Wayland / niri 下的全局划词翻译，可切换提示词与大模型
+Comment[en]=Global selection translation for Wayland / niri
+Exec=seltrans settings
+Icon=xyz.brownie.SelectionTranslation
+Terminal=false
+Categories=Utility;Translation;
+Keywords=translate;translation;划词;翻译;seltrans;
+StartupNotify=false
+# Tauri 版三个窗口共用一个 app-id（GTK 版当年是 .Popup / .Settings 两个）
+StartupWMClass=xyz.brownie.SelectionTranslation
+Actions=Translate;
+
+[Desktop Action Translate]
+Name=翻译当前选中的文本
+Exec=seltrans popup

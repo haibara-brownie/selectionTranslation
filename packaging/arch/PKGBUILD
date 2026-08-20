@@ -1,0 +1,83 @@
+# 本地开发用的 Arch 包：从**当前工作树**构建，装成 pacman 认得的包。
+#
+# 跟 ../aur/PKGBUILD 的区别：那份是发布用的，从 GitHub 的 tag tarball 拉源码；
+# 这份直接编你手上这份代码，方便边改边装。两份的 pkgname 相同，装一个会顶掉另一个。
+#
+#   cd packaging/arch && makepkg -si
+#
+# 装完之后 pacman 就管得着它了：`pacman -Qi seltrans` 看信息、`pacman -R seltrans` 卸载。
+
+pkgname=seltrans
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="Wayland / macOS / Windows 下的全局划词翻译，支持多家大模型、可切换翻译风格"
+arch=('x86_64' 'aarch64')
+url="https://github.com/haibara-brownie/selectionTranslation"
+license=('MIT')
+
+# 界面是 HTML/CSS/TS，由 WebKitGTK 渲染 —— gtk3 是 WebKitGTK 的开窗层，
+# 不是"界面还是 GTK"（老的 GTK4 版才是那样，已经不再维护）。
+depends=(
+    'webkit2gtk-4.1'
+    'gtk3'
+    'wl-clipboard'
+    'gcc-libs'
+    'glibc'
+)
+makedepends=('cargo' 'pnpm' 'nodejs')
+optdepends=(
+    'ydotool: 主选区取不到词时模拟 Ctrl+C 兜底'
+    'libayatana-appindicator: 某些面板需要它才显示托盘图标'
+    'niri: 参考 /usr/share/doc/seltrans/niri-snippet.kdl 配置快捷键与浮动窗口规则'
+)
+
+# 不能去掉：makepkg 默认往 CFLAGS 里塞 -flto=auto，会把 aws-lc-sys
+# （rustls 的加密后端）的 C 目标文件编成 LLVM bitcode，链接时报一堆
+# `undefined symbol: aws_lc_0_44_0_*`。踩过一次了。
+options=('!lto' '!debug')
+
+# 从工作树直接编，不下载源码
+source=()
+sha256sums=()
+
+# 仓库根。`makepkg` 在 packaging/arch/ 里跑，往上两级。
+_root() { printf '%s' "$(realpath "$startdir/../..")"; }
+
+build() {
+    cd "$(_root)"
+
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR="$(_root)/target"
+
+    pnpm install --frozen-lockfile
+
+    # **必须走 tauri build，不能用 cargo build --release。**
+    #
+    # Tauri 靠 `tauri` 依赖有没有开 custom-protocol 特性判断 dev / 生产
+    # （它的 build.rs 里就一行 `let dev = !has_feature("custom-protocol")`），
+    # 只有 tauri build 会加上。cargo 编出来的二进制会去连 devUrl，
+    # 窗口一片空白、左上角写着 Connection refused —— 跟 --release 与否无关。
+    #
+    # --no-bundle：这里只要二进制，deb / rpm / AppImage 归 release.yml。
+    pnpm tauri build --no-bundle
+}
+
+package() {
+    cd "$(_root)"
+
+    # 装成 `seltrans`（二进制本名是 seltrans-tauri）—— niri 配置里写的是
+    # `spawn "seltrans"`，改名字就得连着改那边
+    install -Dm755 target/release/seltrans-tauri "$pkgdir/usr/bin/seltrans"
+
+    install -Dm644 data/xyz.brownie.SelectionTranslation.svg \
+        "$pkgdir/usr/share/icons/hicolor/scalable/apps/xyz.brownie.SelectionTranslation.svg"
+    install -Dm644 data/xyz.brownie.SelectionTranslation.desktop \
+        "$pkgdir/usr/share/applications/xyz.brownie.SelectionTranslation.desktop"
+
+    # niri 的快捷键与窗口规则不自动装 —— 那是用户的桌面配置，
+    # 包管理器不该往里塞东西。放进 doc 让用户自己 include。
+    install -Dm644 data/niri-snippet.kdl \
+        "$pkgdir/usr/share/doc/$pkgname/niri-snippet.kdl"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
