@@ -12,11 +12,20 @@
 两个二进制**共用同一份配置和日志**，可以随时来回切，互不影响。
 
 ```bash
-cargo build --release
+pnpm tauri build --no-bundle                  # 不要用 cargo build --release，见下
 ./target/release/seltrans-tauri settings      # 设置界面
 ./target/release/seltrans-tauri popup --text "hello"
 ./target/release/seltrans-tauri tray          # 常驻托盘
 ```
+
+> **别用 `cargo build --release` 编 Tauri 版。** 那样编出来的二进制**跑不起来**：
+> 窗口一片空白，左上角写着 `Could not connect to localhost. Connection refused`。
+>
+> 原因是 Tauri 靠 `tauri` 依赖有没有开 `custom-protocol` 特性来判断 dev / 生产
+> （`tauri` 的 build.rs：`let dev = !has_feature("custom-protocol")`）。
+> 只有 `tauri build` 会加上这个特性；不加就走 `devUrl`，去连一个没起的 vite。
+>
+> 这个坑不挑构建配置 —— `--release` 一样中招，因为它跟 profile 无关。
 
 日常那个 `~/.local/bin/seltrans` **不会**被动到。
 

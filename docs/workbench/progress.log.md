@@ -18,3 +18,7 @@
 - [2026-08-20 18:40] 修 CI | 上一次 push 把 ci.yml 弄挂了：python 切片 end<start 把 tray.rs 的 Linux 段复制了一遍，加一处 dead_code。mac 上发现不了（那段是 cfg(linux)，本机不编译）。已修并绿 | 教训：改编不了的代码前先用 rustfmt 验结构 + /tmp 壳子做交叉检查
 - [2026-08-20 18:40] 文档 | README 加三张截图（弹窗/风格下拉/设置页），用 screencapture -o -l <windowid> 只截窗口带 alpha，GitHub 浅深两种主题都验过 | —
 - [2026-08-20 18:45] 交接 | **T-13（首次使用提示）做到一半**：后端全完成但前端还没用（字段惰性，不影响现有行为），前端只抽出了 ui/lib/keys.ts | **剩余三处都在前端，T-13 票里写了逐步骤的接续说明**
+- [2026-08-20 21:22] 回归 | **T-12 Linux 回归九条全过**（真机 niri）：常驻首次触发、单次取词、关设置不掉托盘、niri 摆位、自绘下拉、动效、托盘图标、快捷键只读列表、依赖自检。详见 cross-platform-ready/ | 只剩 T-13
+- [2026-08-20 21:22] 坑 | **Tauri 二进制必须用 `pnpm tauri build`，`cargo build --release` 编出来的跑不起来**（`dev = !has_feature("custom-protocol")`，只有 tauri build 会加，跟 profile 无关）。已写进 README 与 docs/切到-tauri-版.md | —
+- [2026-08-20 21:22] 环境 | Tauri 的 niri 窗口规则此前从没装到 Arch 上（install.sh 是安装动作，验证时不跑）。已备份后手工加进 ~/.config/niri/selectiontranslation.kdl | —
+- [2026-08-20 21:22] 工具 | safekey.sh（带 trap 的安全按键）与 shoot.sh（无头嵌套会话截图）从 .scratch 挪进 docs/workbench/tools/，两台机器共用 | —

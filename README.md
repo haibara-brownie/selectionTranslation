@@ -386,17 +386,24 @@ ui/                           Tauri 的前端（Vite + TypeScript，无框架）
 平台相关的部分（取词、托盘、快捷键、自启）不属于 core。
 
 ```bash
-cargo build                              # 编译（GTK 版 + Tauri 版）
+cargo build --workspace                  # 编译（GTK 版 + Tauri 版）
 cargo clippy --workspace --all-targets -- -D warnings   # 静态检查
 cargo fmt --check
 cargo test --workspace                   # 测试
 
-pnpm install && pnpm tauri dev           # 跑 Tauri 版（会同时起 vite）
+pnpm install && pnpm tauri dev           # 开发时跑 Tauri 版（会同时起 vite）
+pnpm tauri build --no-bundle             # 出一个能独立跑的 Tauri 二进制
 ```
 
 > **`--workspace` 不能省。** 仓库根的 `Cargo.toml` 既是 workspace 根又是一个 package，
-> 裸跑 `cargo test` / `cargo clippy` **只作用于根包**，会静默跳过 core 和 Tauri 那两个
-> crate 然后报 ok。
+> 裸跑 `cargo build` / `cargo test` / `cargo clippy` **只作用于根包**，会静默跳过
+> core 和 Tauri 那两个 crate 然后报 ok。
+
+> **要能独立运行的 Tauri 二进制，必须走 `tauri build`，不能用 `cargo build --release`。**
+> Tauri 靠 `tauri` 依赖有没有开 `custom-protocol` 特性来判断 dev / 生产
+> （它的 build.rs 里就一行：`let dev = !has_feature("custom-protocol")`），
+> 只有 `tauri build` 会加这个特性。`cargo build` 编出来的二进制会去连 `devUrl`，
+> 窗口一片空白、左上角写着 `Connection refused` —— 跟 `--release` 与否无关。
 
 技术栈：Rust 2024 + GTK4 / libadwaita（`gtk4` 0.11、`libadwaita` 0.9）+ Tauri 2.11、tokio、reqwest（rustls）、ksni（托盘）、jiff（时间戳）；前端 Vite 7 + TypeScript，不上框架。无数据库，配置落 XDG 目录。
 

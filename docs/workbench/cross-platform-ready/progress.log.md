@@ -360,3 +360,17 @@ T-12 必须最后做，而且**只能在 Arch 工作站上做**。
 T-06（Windows UIA 取词）是波次 1 最后一张，也是**本机完全验不了**的一张：
 `cargo check --target x86_64-pc-windows-msvc` 卡在 `aws-lc-sys`（要能编 Windows 的 C 工具链），
 连类型检查都做不了。只能盲写 + CI + 用户的 Windows 机器。
+
+## 2026-08-20 晚（Arch 侧，T-12 Linux 回归）
+
+- [21:00] 基线 | pull 后 fmt / clippy -D warnings / 33 测试 / pnpm build 在 Arch 上全绿，三个 package 都能编 | 跑起来
+- [21:02] 坑 | **`cargo build --release` 编出的 Tauri 二进制跑不起来**：窗口空白 + `Connection refused`，它去连 devUrl 了。根因是 tauri 的 build.rs `let dev = !has_feature("custom-protocol")`，只有 `tauri build` 会加这个特性，跟 profile 无关。票里写的命令是错的，已订正，并写进 README 与 docs/切到-tauri-版.md | 用 pnpm tauri build --no-bundle 重编
+- [21:03] 回归 1、2 | 常驻后**第一次**触发就走完取词→翻译→完成，无空弹窗；「开始取词」只出现 1 次。用 `wl-copy --primary` 造划词状态驱动整条快捷键通路 | 第 3 条
+- [21:12] 回归 3 | Esc 关设置窗口后进程存活、SNI 仍注册、后续 popup 照常翻译。后来误触 ✕ 时又复现一次，两次都对 | 第 4 条
+- [21:05] 坑 | **Tauri 的 niri 窗口规则从没装到本机**：仓库 data/niri-snippet.kdl 里有，用户 ~/.config/niri/ 下只有 GTK 那两条（install.sh 是安装动作，验证时不该跑）。**已备份后手工加上**（`selectiontranslation.kdl.bak-20260820-210514`），niri validate 通过。install.sh 是整份覆盖该文件的，重跑不会漂移 | 第 4 条
+- [21:06] 回归 4 | 规则生效后弹窗 is_floating=True、560×480、右上角；设置窗口按标题匹配到 900×700 | 第 5 条
+- [21:08] 回归 5 | 自绘下拉在 WebKitGTK 上全通：顶栏展开不被裁、底栏**向上翻**、设置页目标语言下拉盖过好几行没被滚动容器裁；空格展开 / ↑↓ / Enter / Esc 只收下拉不关窗；标签栏也能 Tab+空格切页。「浮层改挂 body」那个修复生效 | 第 6 条
+- [21:16] 回归 6 | wf-recorder 60fps + ffmpeg 抽帧：骨架屏三条微光在扫、spinner 在转、首 token 到达后换成文字并出现闪烁光标。**光标只在有文字后才出现**，那个修复生效。无卡顿 | 第 7 条
+- [21:01] 回归 7 | 托盘图标放大 8 倍看：深色圆角方块 + 薄荷绿选区条 + 深色箭头镂空，箭头清晰可辨。（一开始没认出来，是用户提醒「图标变了而已」） | 第 8、9 条
+- [21:19] 回归 8、9 | 快捷键分组是只读列表无录制按钮；依赖自检四项全绿 + 绿色汇总条 | 收尾
+- [21:22] 收尾 | T-12 status→done，九条结果与 Linux 侧验证手法写进票里。safekey.sh / shoot.sh 从不入库的 .scratch 挪进 docs/workbench/tools/（票是入库的，引用 .scratch 到了 Mac 上就是断的），配 README 说明理由 | 只剩 T-13
