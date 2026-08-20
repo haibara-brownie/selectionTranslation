@@ -1,0 +1,156 @@
+/* 自绘下拉 —— 弹窗和设置页共用。
+ *
+ * 为什么要有这个文件：原生 <select> 的弹层由操作系统画，三个平台三种长相
+ * （GTK 菜单 / NSMenu / WebView2），跟应用主题对不上。接管的逻辑在
+ * lib/dropdown.ts，这里只管长相。
+ *
+ * 列表部分（.combo-list / .combo-item）本来只在 settings.css 里给字体那个带搜索的
+ * 下拉用，现在挪到这里，让全部下拉共用同一套视觉语言 —— 否则应用内部就先不统一了。 */
+
+/* ---------- 接管后的触发器 ---------- */
+
+.dd {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+/* 原生 select 留在 DOM 里当数据源，但不出现在画面上 */
+.dd-native {
+  display: none;
+}
+
+.dd-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 8px;
+  background: var(--ctp-mantle);
+  color: var(--ctp-text);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 130ms ease, background-color 130ms ease, box-shadow 130ms ease;
+}
+
+.dd-trigger:hover:not(:disabled) {
+  background: var(--ctp-surface0);
+}
+
+.dd-trigger:focus-visible {
+  outline: none;
+  border-color: var(--ctp-blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ctp-blue) 28%, transparent);
+}
+
+.dd-trigger:disabled {
+  color: var(--ctp-overlay0);
+  cursor: default;
+}
+
+.dd-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dd-caret {
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--ctp-subtext0);
+  transition: transform 130ms ease;
+}
+
+.dd-trigger[aria-expanded="true"] .dd-caret {
+  transform: rotate(180deg);
+}
+
+/* ---------- 弹层 ---------- */
+
+.combo-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  max-height: 280px;
+  padding: 5px;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 12px;
+  background: var(--ctp-surface0);
+  /* 用 crust（每个风味里最深的那档）而不是裸黑色：浅色主题下纯黑阴影显得脏 */
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ctp-crust) 45%, transparent);
+  overflow-y: auto;
+  animation: combo-in 130ms ease both;
+}
+
+/* 往上弹。弹窗只有 480 高，底部那个「模型」下拉一律往下弹会被
+   .shell 的 overflow: hidden 整个裁掉，用户看到的是「点了没反应」。 */
+.dd-list.up {
+  top: auto;
+  bottom: calc(100% + 5px);
+  animation-name: combo-in-up;
+}
+
+/* 触发器可能比列表窄（比如顶栏那个 chip），列表按内容撑开，但别超出窗口。
+   默认贴左边生长；贴右边由 place() 按剩余空间决定（见下）。 */
+.dd-list {
+  right: auto;
+  left: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 24px));
+}
+
+/* 往左生长。设置页的下拉都在行的右端，一律向右撑会把页面撑出横向滚动条 ——
+   容器一滚，行标题就被推出可视区（"目标语言"只剩"…哪种语言"）。实测踩过。 */
+.dd-list.right {
+  right: 0;
+  left: auto;
+}
+
+@keyframes combo-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes combo-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.combo-item {
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.combo-item:hover,
+.combo-item.active {
+  background: var(--ctp-surface1);
+}
+
+.combo-item.current {
+  color: var(--ctp-blue);
+  font-weight: 600;
+}
+
+.combo-empty {
+  padding: 6px 10px;
+  color: var(--ctp-overlay0);
+  font-size: 0.86em;
+}

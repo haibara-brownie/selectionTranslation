@@ -194,58 +194,12 @@ body.settings .shell {
 
 /* ---------- 带搜索的下拉 ---------- */
 
+/* 列表本体（.combo-list / .combo-item）已挪到 dropdown.css，和其余下拉共用一套长相。
+   这里只留搜索框特有的定位。 */
+
 .combo {
   position: relative;
   width: min(340px, 100%);
-}
-
-.combo-list {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 5px);
-  right: 0;
-  left: 0;
-  max-height: 280px;
-  padding: 5px;
-  border: 1px solid var(--ctp-surface1);
-  border-radius: 12px;
-  background: var(--ctp-surface0);
-  /* 用 crust（每个风味里最深的那档）而不是裸黑色：浅色主题下纯黑阴影显得脏 */
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--ctp-crust) 45%, transparent);
-  overflow-y: auto;
-  animation: combo-in 130ms ease both;
-}
-
-@keyframes combo-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-
-.combo-item {
-  padding: 6px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.combo-item:hover,
-.combo-item.active {
-  background: var(--ctp-surface1);
-}
-
-.combo-item.current {
-  color: var(--ctp-blue);
-  font-weight: 600;
-}
-
-.combo-empty {
-  padding: 6px 10px;
-  color: var(--ctp-overlay0);
-  font-size: 0.86em;
 }
 
 /* ---------- 开关 ---------- */

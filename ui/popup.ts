@@ -11,6 +11,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
+import { enhanceAll } from "./lib/dropdown";
+
 type PromptOption = { id: string; name: string; icon: string };
 type ProviderOption = { id: string; name: string; model: string; models: string[] };
 
@@ -257,6 +259,9 @@ async function apply(req: TranslateRequest) {
 
 async function boot() {
   wire();
+  // 顶栏的「翻译风格」和底栏的「模型」换成自绘下拉：原生弹层由系统画，
+  // mac 上是个 NSMenu，跟窗口里的深色卡片完全两套东西（见 lib/dropdown.ts）
+  enhanceAll();
 
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const [s, launch] = await Promise.all([

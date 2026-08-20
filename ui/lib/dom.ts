@@ -8,6 +8,8 @@
  * 命名刻意跟 libadwaita 对齐，方便和 GTK 版的 settings_ui.rs 对照着看。
  */
 
+import { enhanceSelect } from "./dropdown";
+
 export function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   attrs: Record<string, string> = {},
@@ -76,7 +78,12 @@ export function comboRow(
   }
   select.addEventListener("change", () => onChange(select.value));
   const [row, tail] = rowShell(title, subtitle);
-  tail.append(h("label", { class: "select-wrap" }, select));
+  // 用 div 不用 label：接管后触发器是个 <button>，label 会把点击再转发给它，
+  // toggle 触发两次等于没反应（踩过）
+  tail.append(h("div", { class: "select-wrap" }, select));
+  // 换成自绘下拉，跟字体那个带搜索的下拉、以及弹窗里的两个下拉共用一套长相。
+  // 原生弹层由系统画，三个平台三种样子（见 lib/dropdown.ts）。
+  enhanceSelect(select);
   return row;
 }
 

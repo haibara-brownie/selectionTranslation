@@ -96,45 +96,20 @@ html.opaque .shell {
 
 /* ---------- 下拉 ---------- */
 
-/* 原生 <select> 的弹层由系统画，配色跟不上主题；但换成自绘弹层就要自己处理
- * 键盘导航、滚动、边缘避让。P1 先用原生的，靠 color-scheme 让它跟着明暗走。 */
-.select-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
+/* 弹窗顶栏的「翻译风格」和底栏的「模型」都是自绘下拉（见 lib/dropdown.ts），
+   通用长相在 dropdown.css，这里只调这两处的尺寸。
+   原来那套 `.select-wrap::after` 画箭头 + `.chip select` 的写法已经删掉 ——
+   自绘触发器自带箭头，留着会画出两个。 */
 
-.select-wrap::after {
-  content: "▾";
-  position: absolute;
-  right: 9px;
-  font-size: 10px;
-  color: var(--ctp-subtext0);
-  pointer-events: none;
-}
-
-.chip select {
-  appearance: none;
+.chip .dd-trigger {
   max-width: 260px;
-  padding: 5px 26px 5px 12px;
-  border: 1px solid var(--ctp-surface1);
+  padding: 5px 12px;
   border-radius: 9px;
   background: var(--ctp-surface0);
-  color: var(--ctp-text);
-  font-family: inherit;
-  font-size: inherit;
-  cursor: pointer;
-  transition: border-color 120ms ease, background-color 120ms ease;
 }
 
-.chip select:hover {
+.chip .dd-trigger:hover:not(:disabled) {
   background: var(--ctp-surface1);
-}
-
-.chip select:focus-visible {
-  outline: none;
-  border-color: var(--ctp-blue);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ctp-blue) 30%, transparent);
 }
 
 /* ---------- 正文 ---------- */

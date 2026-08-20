@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>划词翻译</title>
     <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./dropdown.css" />
     <!-- 调色板与字体分档由 Rust 生成后注入，见 popup.ts -->
     <style id="theme"></style>
   </head>
@@ -16,9 +17,9 @@
 
         <div class="spacer"></div>
 
-        <label class="select-wrap chip" title="翻译风格">
+        <div class="chip" title="翻译风格">
           <select id="prompt"></select>
-        </label>
+        </div>
 
         <div class="spacer"></div>
 
@@ -50,9 +51,9 @@
       </main>
 
       <footer class="statusbar">
-        <label class="select-wrap chip" title="模型">
+        <div class="chip" title="模型">
           <select id="model"></select>
-        </label>
+        </div>
         <span id="status" class="status"></span>
       </footer>
     </div>
