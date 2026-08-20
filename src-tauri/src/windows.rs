@@ -114,6 +114,95 @@ fn place_top_right<R: Runtime>(app: &AppHandle<R>, win: &WebviewWindow<R>) {
     }
 }
 
+/// 把 macOS 窗口左上角那三颗红绿灯藏掉。
+///
+/// 为什么会有它们：mac 上要圆角就只能保留系统标题栏（见 `open_popup` 里的注释），
+/// 而系统标题栏自带这三颗按钮。弹窗自己画了 ✕，再来一颗系统的关闭按钮是重复的，
+/// 而且顶栏左上角本来放着「重新翻译」，会被压住。
+///
+/// 藏掉而不是禁用：禁用只是变灰，仍然占位。
+///
+/// **动作必须跳到主线程上做。** AppKit 只允许在主线程碰窗口，而这个函数的调用方之一是
+/// single-instance 插件的回调（Linux 上按快捷键、以及任何命令行再次启动都走那条路），
+/// 那个回调不在主线程。在别的线程上调 AppKit 会抛 Objective-C 异常，而 Rust 接不住
+/// 外来异常 —— `fatal runtime error: Rust cannot catch foreign exceptions`，进程当场
+/// abort。实测踩过：直接启动没事，一走常驻实例就崩。
+#[cfg(target_os = "macos")]
+fn hide_traffic_lights<R: Runtime>(win: &WebviewWindow<R>) {
+    // 单测里必须跳过：Tauri 的 MockRuntime 不实现 `ns_window()`，兜底给出来的是一个
+    // **非空但无效**的指针，`NonNull` 检查拦不住，一解引用就 SIGSEGV。实测踩过。
+    // 这个函数本来也没法在 mock 上验——真窗口才有红绿灯。
+    if cfg!(test) {
+        return;
+    }
+
+    let app = win.app_handle().clone();
+    let win = win.clone();
+    let hide = move || {
+        use objc2_app_kit::{NSWindow, NSWindowButton};
+
+        let Ok(ptr) = win.ns_window() else {
+            seltrans_core::logging::warn("拿不到 NSWindow，红绿灯没藏成");
+            return;
+        };
+        let Some(ns) = std::ptr::NonNull::new(ptr.cast::<NSWindow>()) else {
+            return;
+        };
+
+        // SAFETY: 指针来自 Tauri 对本窗口的 `ns_window()`，窗口活着它就有效；这个闭包
+        // 由 `run_on_main_thread` 投递，执行时一定在主线程上。
+        let ns = unsafe { ns.as_ref() };
+        for kind in [
+            NSWindowButton::CloseButton,
+            NSWindowButton::MiniaturizeButton,
+            NSWindowButton::ZoomButton,
+        ] {
+            if let Some(btn) = ns.standardWindowButton(kind) {
+                btn.setHidden(true);
+            }
+        }
+    };
+
+    // 已经在主线程上调也安全：这只是往事件循环塞一条消息，不会自己等自己
+    if let Err(e) = app.run_on_main_thread(hide) {
+        seltrans_core::logging::warn(&format!("藏红绿灯没能派发到主线程：{e}"));
+    }
+}
+
+/// 给窗口套上「无系统标题栏外观、但有系统圆角」的打扮。
+///
+/// # 为什么三个平台走两条路
+///
+/// Linux / Windows：`decorations(false)` + `transparent(true)`，圆角由 CSS 画在
+/// `.shell` 上，窗口本身透明所以四角不会露方块。
+///
+/// **macOS 走不了这条路**：`transparent()` 被 Tauri 挡在 `macos-private-api` 特性后面，
+/// 那是苹果私有 API —— 会被 App Store 拒，也可能随系统更新失效（620d607 拒过一次，
+/// 这里不推翻那个决定）。而无边框的 NSWindow 是**硬方角**，CSS 圆角只会让四角露出底色。
+///
+/// 公开 API 里唯一能拿到圆角的路子是**保留系统标题栏**：`Overlay` 让网页内容一直铺到
+/// 标题栏底下，`hidden_title` 去掉标题文字，系统负责画圆角和投影，再把三颗红绿灯藏掉。
+/// 结果和另两家看齐，且一行私有 API 都没用。
+///
+/// 前端那边靠 `.opaque` 类知道「窗口不是透明的，别自己画圆角」——两边同时画会叠出
+/// 一圈毛边。
+fn decorate<R: Runtime, M: tauri::Manager<R>>(
+    builder: WebviewWindowBuilder<'_, R, M>,
+) -> WebviewWindowBuilder<'_, R, M> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder.decorations(false).transparent(true)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        builder
+            .decorations(true)
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .initialization_script("document.documentElement.classList.add('opaque')")
+    }
+}
+
 /// 打开（或复用）翻译弹窗
 pub fn open_popup<R: Runtime>(
     app: &AppHandle<R>,
@@ -143,26 +232,18 @@ pub fn open_popup<R: Runtime>(
     }
 
     let cfg = Config::load();
-    let builder = WebviewWindowBuilder::new(app, POPUP, WebviewUrl::App("index.html".into()))
-        .title("划词翻译")
-        .inner_size(cfg.popup_width as f64, cfg.popup_height as f64)
-        // 顶栏是自己画的
-        .decorations(false);
     // 位置不在这里设 —— Wayland 下客户端没权限摆自己，那是合成器的事
     // （niri 的 window-rule 按 app-id 匹配，见 data/niri-snippet.kdl）
-
-    // 透明窗口是为了让 CSS 的圆角不露出方角。
-    //
-    // **macOS 上做不到**：Tauri 把 `transparent()` 挡在 `macos-private-api` 特性后面，
-    // 那是苹果的私有 API —— 会被 App Store 拒，也可能随系统更新失效。为一个圆角
-    // 冒这个险不值得，所以 mac 上用不透明的方角窗口，并告诉前端别画圆角
-    // （否则四角会露出白方块）。
-    #[cfg(not(target_os = "macos"))]
-    let builder = builder.transparent(true);
-    #[cfg(target_os = "macos")]
-    let builder = builder.initialization_script("document.documentElement.classList.add('opaque')");
+    let builder = decorate(
+        WebviewWindowBuilder::new(app, POPUP, WebviewUrl::App("index.html".into()))
+            .title("划词翻译")
+            .inner_size(cfg.popup_width as f64, cfg.popup_height as f64),
+    );
 
     let win = builder.build()?;
+
+    #[cfg(target_os = "macos")]
+    hide_traffic_lights(&win);
 
     // 摆到鼠标那块屏的右上角。Linux 上这事归合成器，不在这里做。
     #[cfg(not(target_os = "linux"))]
@@ -200,12 +281,19 @@ pub fn open_settings<R: Runtime>(
     if let Some(p) = page {
         url.push_str(&format!("?page={p}"));
     }
-    WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App(url.into()))
-        .title("划词翻译 · 设置")
-        .inner_size(900.0, 700.0)
-        .min_inner_size(640.0, 480.0)
-        .decorations(false)
-        .build()
+    // 设置页跟弹窗用同一套打扮，否则 mac 上一个圆角一个方角，看着像两个程序
+    let win = decorate(
+        WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App(url.into()))
+            .title("划词翻译 · 设置")
+            .inner_size(900.0, 700.0)
+            .min_inner_size(640.0, 480.0),
+    )
+    .build()?;
+
+    #[cfg(target_os = "macos")]
+    hide_traffic_lights(&win);
+
+    Ok(win)
 }
 
 /// 命令行 / 托盘都能调到的统一入口：把一次「用户想翻译点什么」变成窗口动作。
