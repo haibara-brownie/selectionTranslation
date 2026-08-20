@@ -5,7 +5,9 @@
 //! 关键行为是**复用**：常驻模式下按快捷键不该每次都新建 webview（那要几百毫秒，
 //! 划词翻译最忌讳这个）。已经有窗口就把它显示出来、聚焦、把新的待翻译文本推给前端。
 
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
 
 use seltrans_core::config::Config;
 
@@ -76,13 +78,17 @@ const MARGIN: f64 = 24.0;
 /// 常驻模式下窗口是复用的。用户要是把它拖到别处，说明他想让它待在那儿；每次都强行拽
 /// 回右上角是跟用户较劲。Linux 那边由合成器每次强制，是合成器的策略，不必强求一致。
 #[cfg(not(target_os = "linux"))]
-fn place_top_right(app: &AppHandle, win: &WebviewWindow) {
+fn place_top_right<R: Runtime>(app: &AppHandle<R>, win: &WebviewWindow<R>) {
     use tauri::PhysicalPosition;
 
+    // 查显示器一律走**窗口**上的那套接口，不用 AppHandle 上的同名方法：两者行为一致，
+    // 但 AppHandle 版在 Tauri 的 MockRuntime 里是 `unimplemented!()`，一调就 panic，
+    // 于是任何走到开窗这一步的单测都做不了。窗口版返回 `Ok(None)`，正好落进下面
+    // 「拿不到显示器就放弃摆位」那条既有分支。
     let monitor = app
         .cursor_position()
         .ok()
-        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+        .and_then(|p| win.monitor_from_point(p.x, p.y).ok().flatten())
         .or_else(|| win.current_monitor().ok().flatten());
 
     let Some(monitor) = monitor else {
@@ -109,23 +115,31 @@ fn place_top_right(app: &AppHandle, win: &WebviewWindow) {
 }
 
 /// 打开（或复用）翻译弹窗
-pub fn open_popup(app: &AppHandle, req: TranslateRequest) -> tauri::Result<WebviewWindow> {
+pub fn open_popup<R: Runtime>(
+    app: &AppHandle<R>,
+    req: TranslateRequest,
+) -> tauri::Result<WebviewWindow<R>> {
+    // 当轮内容先写进 `Launch` 槽位 —— **两条路都要**。
+    //
+    // 新建那条路上前端收不到 `EVENT_TRANSLATE`（它还没挂上监听器），只能靠 `launch_args`
+    // 来读；而槽位里原本躺着的是**进程启动时**那份，托盘常驻模式下是空的。不写就会开出
+    // 一个空弹窗：取词明明成功了，文本却丢在这一步。实测过，第二次起才正常。
+    //
+    // 复用那条路上前端走事件，看似不必写。但 webview 被系统回收后重载时它还是会去读
+    // `launch_args` —— 槽位停在上一轮，就会把旧文本再翻一遍。这个槽位的语义是「当前
+    // 这一轮」，让它和事件指向同一个事实，比省一次写要紧。
+    if let Some(launch) = app.try_state::<crate::Launch>()
+        && let Ok(mut slot) = launch.0.lock()
+    {
+        *slot = req.clone();
+    }
+
     if let Some(win) = app.get_webview_window(POPUP) {
         win.show()?;
         win.set_focus()?;
         // 窗口是复用的，前端还停在上一轮的内容上，得告诉它换一批
         let _ = win.emit(EVENT_TRANSLATE, req);
         return Ok(win);
-    }
-
-    // 新建这条路上前端收不到 `EVENT_TRANSLATE`（它还没挂上监听器），拿的是
-    // `launch_args`。而 `Launch` 里存的是**进程启动时**那份 —— 托盘常驻模式下是空的。
-    // 不在这里写进去，常驻后的第一次触发就会开出一个空弹窗：取词成功了，文本却丢在
-    // 这一步。实测过，第二次起才正常（那时走的是上面的复用分支）。
-    if let Some(launch) = app.try_state::<crate::Launch>()
-        && let Ok(mut slot) = launch.0.lock()
-    {
-        *slot = req;
     }
 
     let cfg = Config::load();
@@ -172,7 +186,10 @@ pub fn open_popup(app: &AppHandle, req: TranslateRequest) -> tauri::Result<Webvi
 }
 
 /// 打开（或复用）设置页。`page` 是要直接跳到的标签页。
-pub fn open_settings(app: &AppHandle, page: Option<&str>) -> tauri::Result<WebviewWindow> {
+pub fn open_settings<R: Runtime>(
+    app: &AppHandle<R>,
+    page: Option<&str>,
+) -> tauri::Result<WebviewWindow<R>> {
     if let Some(win) = app.get_webview_window(SETTINGS) {
         win.show()?;
         win.set_focus()?;
@@ -194,12 +211,77 @@ pub fn open_settings(app: &AppHandle, page: Option<&str>) -> tauri::Result<Webvi
 /// 命令行 / 托盘都能调到的统一入口：把一次「用户想翻译点什么」变成窗口动作。
 ///
 /// **取词在这里做完再开窗**，理由见 `prepare`。
-pub fn dispatch(app: &AppHandle, cmd: &str, req: TranslateRequest, page: Option<&str>) {
+pub fn dispatch<R: Runtime>(
+    app: &AppHandle<R>,
+    cmd: &str,
+    req: TranslateRequest,
+    page: Option<&str>,
+) {
     let r = match cmd {
         "settings" | "config" => open_settings(app, page).map(|_| ()),
         _ => open_popup(app, prepare(req)).map(|_| ()),
     };
     if let Err(e) = r {
         seltrans_core::logging::error(&format!("打开窗口失败：{e}"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Launch;
+
+    /// 建一个跑在 MockRuntime 上的 App：不起真窗口系统，但 `.manage()` 的状态、
+    /// 窗口的创建与查找都照常走真实代码路径。
+    fn app() -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .manage(Launch(std::sync::Mutex::new(TranslateRequest::default())))
+            // open_popup 里用的是 state::<Resident>()，没 manage 会 panic
+            .manage(Resident(true))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("MockRuntime 建 App 失败")
+    }
+
+    fn with_text(s: &str) -> TranslateRequest {
+        TranslateRequest {
+            text: Some(s.to_string()),
+            input_mode: false,
+            error: None,
+        }
+    }
+
+    /// 回归测试：**新建**弹窗时，取到的文本必须写进 `Launch` 槽位。
+    ///
+    /// 出过的事故：`open_popup` 在新建那条路上根本没用 `req`，文本掉在地上。前端新建时
+    /// 收不到 `EVENT_TRANSLATE`（还没挂监听器），只能靠 `launch_args` 去读 `Launch`，
+    /// 而那里存的是**进程启动时**那份 —— 托盘常驻模式下是空的。表现为常驻起来后
+    /// **第一次**按快捷键开出一个空弹窗，第二次起才正常（那时走的是复用分支）。
+    #[test]
+    fn 新建弹窗时把待翻译文本写进_launch_槽位() {
+        let app = app();
+        let handle = app.handle();
+
+        open_popup(handle, with_text("hello world")).expect("开弹窗失败");
+
+        let stored = handle.state::<Launch>().0.lock().unwrap().clone();
+        assert_eq!(
+            stored.text.as_deref(),
+            Some("hello world"),
+            "新建弹窗没把文本写进 Launch，前端 launch_args 会读到空的"
+        );
+    }
+
+    /// 复用已有窗口时也不能把槽位留在上一轮的内容上 —— 前端万一在这一轮重新读
+    /// `launch_args`（比如 webview 被系统回收后重载），读到的必须是当前这次的文本。
+    #[test]
+    fn 复用弹窗时_launch_槽位跟着更新() {
+        let app = app();
+        let handle = app.handle();
+
+        open_popup(handle, with_text("第一轮")).expect("开弹窗失败");
+        open_popup(handle, with_text("第二轮")).expect("复用弹窗失败");
+
+        let stored = handle.state::<Launch>().0.lock().unwrap().clone();
+        assert_eq!(stored.text.as_deref(), Some("第二轮"));
     }
 }

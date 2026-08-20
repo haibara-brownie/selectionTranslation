@@ -59,3 +59,9 @@ tauri-plugin-global-shortcut = "2.3.2"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
+
+# tauri 的 `test` 特性提供 MockRuntime：不用真的起 webview / 窗口系统就能建出 App，
+# 于是「开窗前后 Rust 侧的状态对不对」这类事能进单测。
+# 这个 crate 是个 binary，测试只能写成 src 里的 #[cfg(test)] 模块（集成测试 import 不到）。
+[dev-dependencies]
+tauri = { version = "2.11.5", features = ["test"] }
