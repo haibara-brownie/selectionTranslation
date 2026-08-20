@@ -11,6 +11,10 @@ Linux / macOS / Windows 上的全局划词翻译。**选中任意界面里的文
 - 常驻托盘，Catppuccin 配色，跟随系统深浅色
 - 单文件二进制约 9 MB，运行时只依赖桌面本来就有的 gtk4 / libadwaita
 
+<p align="center">
+  <img src="docs/images/popup.png" width="560" alt="翻译弹窗：上面是原文，下面是流式吐出的译文">
+</p>
+
 ---
 
 ## 快速开始
@@ -85,6 +89,13 @@ Linux 上改不了——Wayland 没有全局快捷键协议，键是 niri 拦的
 
 顶部下拉换翻译风格，底部换供应商和模型，**换完立刻用新设置重译同一段文字**，不用重新选词。
 
+<p align="center">
+  <img src="docs/images/prompts.png" width="520" alt="顶部下拉展开，列出七种翻译风格">
+</p>
+
+下拉是自绘的，不是系统那套 —— 原生 `<select>` 的弹层由操作系统画，Linux 是 GTK 菜单、
+macOS 是 NSMenu、Windows 又是第三种，配色和字体都跟应用对不上。自绘之后三个平台长一样。
+
 ### 托盘
 
 | 操作 | 作用 |
@@ -136,6 +147,12 @@ seltrans-tauri tray
 ---
 
 ## 配置
+
+按打开设置的快捷键，或点托盘图标右键 →「设置」。
+
+<p align="center">
+  <img src="docs/images/settings.png" width="720" alt="设置界面：翻译、取词、外观、弹窗四组">
+</p>
 
 配置文件的位置按各平台的规矩来（不确定的话，「关于」页和 `seltrans --help` 都会打印实际路径）：
 
