@@ -42,6 +42,12 @@ dirs = "6.0"
 # 继续用纯 D-Bus 的 ksni。详细理由见 src/tray.rs 的模块头。
 ksni = "0.3.6"
 
+# 把内置 SVG 光栅化成位图。两家都要：Linux 喂给 SNI，macOS 喂给菜单栏的模板图标。
+# 关掉默认特性是为了甩掉 text / system-fonts 那一串字体依赖 —— 图标里没有 <text>。
+# tiny_skia 由 resvg 转出来，不用单列。
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+resvg = { version = "0.48.1", default-features = false }
+
 # macOS：把窗口的三颗红绿灯藏起来（见 windows.rs 的 hide_traffic_lights）。
 # 只开 NSWindow 那几个头文件；默认 feature 会把整个 AppKit 翻译一遍，编译时间翻几倍。
 # 版本跟 seltrans-core 里那份对齐，免得同时链两套 objc2。
@@ -55,9 +61,6 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSResponder",
 ] }
 
-# 把内置 SVG 光栅化成 SNI 要的位图。关掉默认特性是为了甩掉 text / system-fonts
-# 那一串字体依赖 —— 我们的图标里没有 <text>。tiny_skia 由 resvg 转出来，不用单列。
-resvg = { version = "0.48.1", default-features = false }
 
 # mac / Windows 才用 Tauri 内置托盘：那两个平台上它没有 Linux 那些毛病。
 # tray-icon 只在这里打开，Linux 构建根本不会链进 appindicator。
