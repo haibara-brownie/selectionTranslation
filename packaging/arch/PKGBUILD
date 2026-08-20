@@ -25,9 +25,10 @@ depends=(
     'glibc'
 )
 makedepends=('cargo' 'pnpm' 'nodejs')
+# 不列 libayatana-appindicator：Linux 托盘走 ksni（纯 D-Bus StatusNotifierItem），
+# 不链接 appindicator 那套 C 库。`readelf -d` 查过，NEEDED 里没有。
 optdepends=(
     'ydotool: 主选区取不到词时模拟 Ctrl+C 兜底'
-    'libayatana-appindicator: 某些面板需要它才显示托盘图标'
     'niri: 参考 /usr/share/doc/seltrans/niri-snippet.kdl 配置快捷键与浮动窗口规则'
 )
 

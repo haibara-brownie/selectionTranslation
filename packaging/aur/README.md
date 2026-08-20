@@ -2,23 +2,16 @@
 
 这里是发布到 [AUR](https://aur.archlinux.org) 的 `seltrans` 包。AUR 本身是一个独立的 git 仓库，这份是镜像，改完记得两边都推。
 
-当前这份 PKGBUILD 打的是 **GTK4 版**（仓库根 package `seltrans`）。项目正在往 Tauri 2 迁移，迁移期的处置见下。
+**0.3.0 起打的是 Tauri 2 版**（workspace 成员 `src-tauri`，二进制 `seltrans-tauri`，装成 `/usr/bin/seltrans`）。老的 GTK4/libadwaita 版停在 `v0.1.0-gtk` tag，不再维护。
 
-## 迁移期怎么办
+迁移期曾经刻意让这份 PKGBUILD 停在 GTK 版不动（那时 Tauri 版功能还没追平，换过去等于让已装用户倒退）。三平台可用之后已经切完，那段权衡不再适用，删掉了。
 
-**结论：现在只记录 Tauri 版需要什么，不动包结构。** 等 Tauri 版功能追平 GTK 版（迁移方案的 P5）再一次性切过去。切换清单写在 `PKGBUILD` 顶部的注释里。
+### 切换时纠正的两处错判
 
-三个方案都掂量过，选「先不动」是因为它对已经装了这个包的用户破坏最小：
+迁移期在 PKGBUILD 顶部写下的切换清单，真做的时候发现有两条是错的：
 
-| 方案 | 问题 |
-|---|---|
-| 现在就把 `depends` 换成 Tauri 那套 | 最糟。已装用户一跑 `-Syu` 就会被拉进 `webkit2gtk-4.1` + `gtk3` + `libayatana-appindicator` 一大串新依赖，换来的却是一个功能还不全的二进制——日常在用的工具直接倒退。 |
-| 拆成 `seltrans` 和 `seltrans-tauri` 两个包 | 要多注册一个 AUR 包名，而现在**连 AUR 账号都还没有**（注册通道关着）。等于把一件做不了的事排在前面。 |
-| 一个包装两个二进制 | `depends` 变成两套的并集（gtk4 + libadwaita + webkit2gtk + gtk3 + appindicator），依赖和体积都翻倍，用户为用不到的那半份付代价；而且 P5 删掉 GTK 代码时还得再改回去，白折腾一轮。 |
-
-附带的好处：只加注释、不碰任何 `pkgname` / `depends` / `source` 字段，`.SRCINFO` 不用重新生成，也就不会和 AUR 上的版本对不上。
-
-Tauri 版真正切过去时，除了换 `depends` / `makedepends`，最花时间的是**离线依赖**：AUR 的构建环境不允许联网，`pnpm install` 得靠 `source=()` 预先下好的 tarball 或离线镜像来喂。这条别等到切换当天才发现。
+- **不需要 `libayatana-appindicator`。** Linux 托盘走 ksni（纯 D-Bus StatusNotifierItem），压根不链接 appindicator 那套 C 库。`readelf -d` 查二进制的 NEEDED，里面连 `dbus` 之外的托盘相关库都没有。
+- **不需要为 `pnpm install` 做离线依赖。** 当时以为「AUR 的构建环境不允许联网」，所以要靠 `source=()` 预下 tarball 喂 pnpm——这个前提就不成立：AUR 包是用户在自己机器上 `makepkg` 构建的，网络是通的，`makechrootpkg` 的 chroot 也不隔离网络。Arch 的 Rust 打包惯例本身就在 `prepare()` 里跑 `cargo fetch --locked`。照抄同一套即可：**联网都放在 `prepare()`，`build()` 全离线**（`cargo --frozen` + 已装好的 `node_modules`）。原以为是最大的一块工作量，实际是两行。
 
 ## 本地验证
 
@@ -36,7 +29,7 @@ makepkg --printsrcinfo > .SRCINFO
 
 整体的发版步骤（打 tag、CI 出三平台安装包、GitHub Release）见 [`docs/发版.md`](../../docs/发版.md)。下面只是其中 AUR 这一段。
 
-1. 改 `Cargo.toml` 里的 `version`
+1. 改版本号，**三处都要**：`Cargo.toml`（workspace.package）、`package.json`、`src-tauri/tauri.conf.json`
 2. 打 tag 并推：`git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`
 3. 算新 tarball 的哈希：
 
@@ -72,7 +65,7 @@ git clone ssh://aur@aur.archlinux.org/seltrans.git /tmp/aur-seltrans
 cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO /tmp/aur-seltrans/
 cd /tmp/aur-seltrans
 git add PKGBUILD .SRCINFO
-git commit -m "初始提交：seltrans 0.1.0"
+git commit -m "初始提交：seltrans 0.3.0"
 git push
 ```
 

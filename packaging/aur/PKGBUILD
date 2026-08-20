@@ -1,63 +1,92 @@
 # Maintainer: haibarabrownie <haibarabrownie@gmail.com>
 #
-# ⚠ 这份打的是 **GTK4 版**（仓库根 package `seltrans`）。
+# 发布到 AUR 的包，从 GitHub 的 tag tarball 拉源码构建。
+# 想编手上这份工作树请用 ../arch/PKGBUILD（两者 pkgname 相同，装一个会顶掉另一个）。
 #
-# 项目正在往 Tauri 2 迁移，迁移期两版共存：GTK 版是现在日常在用、功能完整的那个，
-# Tauri 版（package `seltrans-tauri`）还在补功能。**现在故意不动这个包的结构**，
-# 理由和切换清单见 packaging/aur/README.md 的「迁移期怎么办」。
-#
-# 等 Tauri 版功能追平（迁移方案的 P5）再照下面这份清单改，改完记得重新生成 .SRCINFO：
-#
-#   depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator'
-#            'wl-clipboard' 'gcc-libs' 'glibc')
-#   makedepends=('cargo' 'nodejs' 'pnpm')
-#   # build() 里要先 `pnpm install --frozen-lockfile`，再 `pnpm tauri build`；
-#   # 装的二进制是 target/release/seltrans-tauri，不是 target/release/seltrans。
-#   # 注意 AUR 不允许构建期联网，pnpm 依赖得走 source=() 预下载或 offline 镜像，
-#   # 这条是切换时最大的一块工作量。
-#
+# 0.3.0 起打的是 **Tauri 2 版**。界面是 HTML/CSS/TS，由 WebKitGTK 渲染 ——
+# depends 里的 gtk3 是 WebKitGTK 的开窗层，不是"界面还是 GTK"。
+# 老的 GTK4/libadwaita 版停在 v0.1.0-gtk tag，不再维护。
+
 pkgname=seltrans
-pkgver=0.1.0
+pkgver=0.3.0
 pkgrel=1
-pkgdesc="Wayland 下的全局划词翻译，支持多家大模型、可切换翻译风格（GTK4 / libadwaita）"
+pkgdesc="Wayland / macOS / Windows 下的全局划词翻译，支持多家大模型、可切换翻译风格"
 arch=('x86_64' 'aarch64')
 url="https://github.com/haibara-brownie/selectionTranslation"
 license=('MIT')
-depends=('gtk4' 'libadwaita>=1.7' 'wl-clipboard' 'gcc-libs' 'glibc')
-makedepends=('cargo')
-# !lto：makepkg 默认往 CFLAGS 里加 -flto=auto，会把 aws-lc-sys（rustls 的加密后端）
-#       的 C 目标文件编成 LLVM bitcode，Rust 链接时找不到符号而失败。
-# !debug：release profile 里已经开了 strip，再出一个 -debug 包是空的。
+
+# 按二进制实际的 NEEDED 列（`readelf -d` 查出来的）。webkit2gtk-4.1 自己就依赖
+# 其中大部分，但直接链接的还是显式写出来，免得哪天上游改了依赖就悄悄断掉。
 #
-# !lto 在切到 Tauri 版之后**同样不能去掉**：aws-lc-sys 还是 rustls 的加密后端，
-# 换 UI 层不影响这条。
-options=('!lto' '!debug')
+# **没有 libayatana-appindicator**：Linux 托盘走 ksni（纯 D-Bus StatusNotifierItem），
+# 不碰 appindicator 那套 C 库，所以只需要 dbus。
+depends=(
+  'webkit2gtk-4.1'
+  'gtk3'
+  'glib2'
+  'libsoup3'
+  'cairo'
+  'gdk-pixbuf2'
+  'fontconfig'
+  'freetype2'
+  'dbus'
+  'wl-clipboard'   # 取词主通路：wl-paste --primary
+  'gcc-libs'
+  'glibc'
+)
+makedepends=('cargo' 'nodejs' 'pnpm')
 optdepends=(
   'ydotool: 主选区取不到词时模拟 Ctrl+C 兜底'
   'niri: 参考 /usr/share/doc/seltrans/niri-snippet.kdl 配置快捷键与浮动窗口规则'
 )
+
+# !lto：makepkg 默认往 CFLAGS 里加 -flto=auto，会把 aws-lc-sys（rustls 的加密后端）
+#       的 C 目标文件编成 LLVM bitcode，Rust 链接时报一堆
+#       `undefined symbol: aws_lc_0_44_0_*` 而失败。换 UI 层不影响这条。
+# !debug：release profile 里已经开了 strip，再出一个 -debug 包是空的。
+options=('!lto' '!debug')
+
 _repo=selectionTranslation
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('1e2672a079b5f86eafc25f55362e2056fb470750064667f27b6079359411d769')
+sha256sums=('9933301efb9dd12de36c7b47b7ab65cd3f4c726f4864671822dacd1e3f8b0000')
 
+# 联网只发生在 prepare()，build() 全离线（cargo --frozen / pnpm 已装好 node_modules）。
+# 这是 Arch 的 Rust 打包惯例，pnpm 这边照抄同一套。
 prepare() {
   cd "$_repo-$pkgver"
   export RUSTUP_TOOLCHAIN=stable
+
   cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+  pnpm install --frozen-lockfile
 }
 
 build() {
   cd "$_repo-$pkgver"
   export RUSTUP_TOOLCHAIN=stable
-  export CARGO_TARGET_DIR=target
-  cargo build --frozen --release
+  # 必须绝对路径：cargo 是从 src-tauri/ 里被调起来的，写相对的 "target"
+  # 会落到 src-tauri/target/，package() 就找不着产物了。
+  export CARGO_TARGET_DIR="$srcdir/$_repo-$pkgver/target"
+
+  # **必须走 tauri build，不能用 cargo build --release。**
+  #
+  # Tauri 靠 `tauri` 依赖有没有开 custom-protocol 特性判断 dev / 生产
+  # （它的 build.rs 里就一行 `let dev = !has_feature("custom-protocol")`），
+  # 只有 tauri build 会加上。cargo 编出来的二进制会去连 devUrl，
+  # 窗口一片空白、左上角写着 Connection refused —— 跟 --release 与否无关。
+  #
+  # --no-bundle：这里只要二进制，deb / rpm / AppImage 归 GitHub Actions。
+  # -- --frozen：`--` 之后的参数原样转给 cargo，锁死 prepare() 抓好的那批依赖。
+  pnpm tauri build --no-bundle -- --frozen
 }
 
 package() {
   cd "$_repo-$pkgver"
   local _appid=xyz.brownie.SelectionTranslation
 
-  install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+  # 装成 `seltrans`（二进制本名是 seltrans-tauri）—— niri 配置里写的是
+  # `spawn "seltrans"`，改名字就得连着改那边
+  install -Dm755 "target/release/$pkgname-tauri" "$pkgdir/usr/bin/$pkgname"
+
   install -Dm644 "data/$_appid.svg" \
     "$pkgdir/usr/share/icons/hicolor/scalable/apps/$_appid.svg"
   install -Dm644 "data/$_appid.desktop" \

@@ -71,19 +71,49 @@ fn parse(args: &[String]) -> (String, TranslateRequest, Option<String>) {
 }
 
 fn help() {
+    // 印哪个名字取决于用户实际是怎么调起来的：包里装成 `seltrans`，
+    // 开发时直接跑 `target/release/seltrans-tauri`。写死一个的话，
+    // 另一种场景下照着复制会得到 command not found。
+    let exe = std::env::args()
+        .next()
+        .as_deref()
+        .map(std::path::Path::new)
+        .and_then(std::path::Path::file_name)
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "seltrans".into());
+
+    let rows = [
+        ("popup [--text <文本>]", "取当前选中的文本并弹窗翻译"),
+        ("popup --input", "打开弹窗并聚焦输入框"),
+        (
+            "settings [页面]",
+            "打开设置，页面可选 general/providers/prompts/about",
+        ),
+        ("tray", "常驻后台并在托盘显示图标"),
+        ("translate [--text <文本>]", "在终端里翻译并打印，不开窗口"),
+        ("log [-f]", "查看运行日志"),
+        ("--version", "显示版本"),
+    ];
+    // 对齐得算出来不能手数：exe 长度会变（seltrans / seltrans-tauri），
+    // 而且 `<文本>` 这类全角字符占两列，chars().count() 会少算。
+    let width = |s: &str| {
+        s.chars()
+            .map(|c| if c.is_ascii() { 1 } else { 2 })
+            .sum::<usize>()
+    };
+    let col = rows.iter().map(|(u, _)| width(u)).max().unwrap_or(0);
+    let usage = rows
+        .iter()
+        .map(|(u, d)| format!("  {exe} {u}{:pad$}   {d}", "", pad = col - width(u)))
+        .collect::<Vec<_>>()
+        .join("\n");
+
     println!(
         "\
 seltrans {ver} —— 划词翻译（Tauri 界面）
 
 用法：
-  seltrans-tauri popup [--text <文本>]   取当前选中的文本并弹窗翻译
-  seltrans-tauri popup --input           打开弹窗并聚焦输入框
-  seltrans-tauri settings [页面]         打开设置，页面可选 general/providers/prompts/about
-  seltrans-tauri tray                    常驻后台并在托盘显示图标
-  seltrans-tauri translate [--text <文本>]
-                                         在终端里翻译并打印结果，不开窗口
-  seltrans-tauri log [-f]                查看运行日志
-  seltrans-tauri --version               显示版本
+{usage}
 
 translate 的输入优先级：--text > 管道输入 > 当前选中的文本
 

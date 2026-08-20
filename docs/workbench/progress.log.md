@@ -27,3 +27,7 @@
 - [2026-08-20 23:50] P5 | **install.sh 改装 Tauri 版**（用户说旧的不用留）。依赖换 webkit2gtk-4.1+gtk3+pnpm，编译走 `pnpm tauri build --no-bundle`。~/.local/bin/seltrans 现在是 0.3.0 Tauri 版 | 引导
 - [2026-08-20 23:55] CI | **加 mac/Windows 编译检查**。原来只跑 Linux，理由是 runner 计费倍率，但那只对私有仓库生效、本仓库是公开的。这次 push 第一次真正编译了 Mac 侧写的 Windows UIA 取词代码，全过 | —
 - [2026-08-21 00:30] 功能 | 新手引导从静态卡片换成**跨窗口七步指引**（onboarding-tour/T-01）。实机验过前四步含跨窗口交接与对话框锚点；修掉「锚点脱落后气泡指着空气」的 bug | 打 Arch 包
+- [2026-08-21 01:00] 发布 | 打了 **v0.3.0 tag**，三平台 CI 全绿，七个产物挂在**草稿** Release 上（deb/rpm/AppImage/dmg/app.tar.gz/msi/nsis-exe）。打 tag 的目的是拿 Windows 安装包——比在 Windows 上装 Rust+pnpm+NASM 从源码编省事得多，顺带验了发出去的包本身能不能装 | 用户下 .msi 去 Windows 试
+- [2026-08-21 01:00] 打包 | **AUR PKGBUILD 从 0.1.0/GTK 版更新到 0.3.0/Tauri 版**，从 tag tarball 完整构建验过（2m04s，6.1MB，包内七个文件都对），.SRCINFO 重生成。仍没 AUR 账号，只改对不发布 | —
+- [2026-08-21 01:00] 纠错 | 迁移期写在 PKGBUILD 里的切换清单有两条是错的：① **不需要 libayatana-appindicator**，Linux 托盘走 ksni（纯 D-Bus SNI），`readelf -d` 查 NEEDED 里根本没有；② **不需要为 pnpm 做离线依赖**，「AUR 构建环境不允许联网」这个前提就不成立（用户自己机器上 makepkg，makechrootpkg 也不隔离网络），照 Arch 的 Rust 惯例把联网放 prepare()、build() 用 --frozen 即可。原以为是最大的一块工作量，实际两行 | 已写进 packaging/aur/README.md
+- [2026-08-21 01:00] 修 bug | `--help` 写死印 `seltrans-tauri`，但包里装出来的命令叫 `seltrans`，用户照着复制会 command not found。改成取 argv[0]；对齐改成算出来的（exe 名长度会变，且 `<文本>` 全角占两列，chars().count() 会少算）| **在 tag 之后，不在 v0.3.0 二进制里**
