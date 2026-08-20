@@ -48,9 +48,23 @@ arboard = { version = "3.6.1", default-features = false }
 # 2. 抬修饰键那一批事件必须一次 SendInput 发完 —— SendInput 保证同一批中间不会被
 #    别的输入插队，而 enigo 是一键一次调用，中间可能被插进真实按键。修饰键卡住的
 #    代价太大，这里不接受"差不多"。
-# 挑 windows-sys 而不是 windows：只要几个函数声明，不需要 COM/HRESULT 那套包装。
+# 模拟按键和剪贴板序号继续用 windows-sys：只要几个函数声明，不需要 COM 那套包装。
 # 版本取 0.61 是跟已经在依赖树里的那份对齐（0.45/0.52/0.59/0.60 是别人钉死的，躲不掉）。
 windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
     "Win32_System_DataExchange",
     "Win32_UI_Input_KeyboardAndMouse",
+] }
+
+# UI Automation 取词要用 windows（不是 windows-sys）。
+#
+# 这跟上面那条「只要函数声明所以用 windows-sys」的理由不冲突，是**前提变了**：
+# UIA 是一整套 COM 接口，用 windows-sys 得手写 vtable 偏移和引用计数，
+# 那种代码没人能审。windows 提供带 RAII 的接口包装，unsafe 面积小一个数量级。
+#
+# 两个 crate 并存没问题（链的是同一批系统库）。只在 Windows 目标上引入，
+# Linux / mac 的构建完全看不到它，不影响那边的编译时间和体积。
+windows = { version = "0.62", default-features = false, features = [
+    "Win32_System_Com",
+    "Win32_UI_Accessibility",
 ] }
