@@ -23,6 +23,17 @@ import {
 } from "../lib/dom";
 import { confirm, modal, type Ctx } from "../lib/shell";
 
+/**
+ * 给控件挂一个稳定的 id，供新手引导定位。
+ *
+ * 引导的锚点必须是**稳定的 id**，不能用 `.rows > .row:nth-child(2)` 这种位置
+ * 选择器 —— 中间加一行就指错地方了。挂 id 是零成本，还能自说明"这里被引导指着"。
+ */
+function tourAnchor<T extends HTMLElement>(el: T, id: string): T {
+  el.id = id;
+  return el;
+}
+
 /** 接口协议。选错了不会报"协议不对"，只会 404，所以副标题里要点明 */
 const KINDS: [string, string][] = [
   ["openai", "OpenAI 兼容 · /chat/completions"],
@@ -53,7 +64,7 @@ export async function render(pane: HTMLElement, ctx: Ctx): Promise<void> {
     actionRow(
       "添加供应商",
       "先挑一家预设，接口类型和 base_url 会自动填好，通常你只需要补一个 API key",
-      button("添加", () => void addProvider(ctx, presets), "accent"),
+      tourAnchor(button("添加", () => void addProvider(ctx, presets), "accent"), "tour-add-provider"),
     ),
   );
 
@@ -255,10 +266,13 @@ async function editProvider(
       );
       addRow(
         g,
-        entryRow("API Key", draft.apiKey, (v) => { draft.apiKey = v; }, {
-          password: true,
-          subtitle: "只写进本机配置文件，不会出现在日志或状态栏里",
-        }),
+        tourAnchor(
+          entryRow("API Key", draft.apiKey, (v) => { draft.apiKey = v; }, {
+            password: true,
+            subtitle: "只写进本机配置文件，不会出现在日志或状态栏里",
+          }),
+          "tour-api-key",
+        ),
       );
 
       const modelRow = entryRow("模型", draft.model, (v) => { draft.model = v.trim(); }, {
@@ -267,8 +281,8 @@ async function editProvider(
       modelInput = modelRow.querySelector<HTMLInputElement>("input");
       addRow(g, modelRow);
 
-      const fetchBtn = button("拉取模型", () => void doFetch());
-      const testBtn = button("测试连接", () => void doTest());
+      const fetchBtn = tourAnchor(button("拉取模型", () => void doFetch()), "tour-fetch-models");
+      const testBtn = tourAnchor(button("测试连接", () => void doTest()), "tour-test-conn");
       addRow(
         g,
         actionRow(

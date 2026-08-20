@@ -77,6 +77,15 @@ pub struct Config {
     /// 在这一轮改过，老用户同样需要被告知一次。
     #[serde(default)]
     pub onboarded: bool,
+    /// 新手引导走到第几步（0 = 还没开始）。
+    ///
+    /// **必须持久化，不能只放内存**：引导要从弹窗跨到设置窗口，而两个窗口是各自
+    /// 独立的 webview、没有共享内存；用户还可能在设置里操作很久、中途把弹窗关掉。
+    /// 落进配置也顺带解决「装完先关了、第二天再打开」。
+    ///
+    /// 走完或跳过时 `onboarded` 置 true，这个字段就不再看了。
+    #[serde(default)]
+    pub tour_step: u32,
     /// 全局快捷键，留空表示用内置默认值。
     ///
     /// **Linux 上这两个字段不生效**：那边快捷键归合成器管（Wayland 没有全局快捷键协议），
@@ -147,6 +156,7 @@ impl Default for Config {
             selection_mode: default_sel_mode(),
             theme: default_theme(),
             onboarded: false,
+            tour_step: 0,
             hotkey_translate: String::new(),
             hotkey_settings: String::new(),
             font_latin: String::new(),

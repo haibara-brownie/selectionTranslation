@@ -7,6 +7,9 @@
 import { api } from "./lib/api";
 import { el } from "./lib/dom";
 import { createCtx, type Ctx } from "./lib/shell";
+import { startTour, syncTour } from "./lib/tour";
+import { buildSteps } from "./lib/tour-steps";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { render as renderGeneral } from "./settings/general";
@@ -82,6 +85,22 @@ async function boot() {
   // 命令行 `settings 供应商` 可以直接跳到某一页
   const want = new URLSearchParams(location.search).get("page") ?? "";
   await show(isPageId(want) ? want : "general");
+
+  // 新手引导的第 3～6 步在这个窗口里（加供应商、填 key、拉模型、测连接）。
+  // 快捷键取自后端，和弹窗共用同一份步骤定义。
+  const hotkeys = await invoke<[string, string]>("hotkeys").catch(
+    () => ["", ""] as [string, string],
+  );
+  await startTour({
+    window: "settings",
+    steps: buildSteps({ hotkeys, os: ctx.os }),
+    getStep: () => invoke<number>("tour_step"),
+    setStep: (step) => invoke("set_tour_step", { step }).then(() => undefined),
+    finish: () => invoke("dismiss_onboarding").then(() => undefined),
+  });
+
+  // 关掉本窗口回到弹窗之前，把最新的步数落下去 —— 弹窗那边靠它接上
+  window.addEventListener("focus", () => void syncTour());
 }
 
 boot().catch((e) => {

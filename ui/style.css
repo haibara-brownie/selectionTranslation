@@ -27,8 +27,7 @@ body {
 }
 
 .shell {
-  /* 定位上下文：首次使用提示是绝对定位的覆盖层，没有这一条它会挂到视口上，
-     于是 overflow:hidden 裁不住它 —— 罩子会把窗口的圆角画成方角。 */
+  /* 定位上下文 */
   position: relative;
   display: flex;
   flex-direction: column;
@@ -413,105 +412,5 @@ html.leaving .shell {
   .output-ghost {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
-  }
-}
-
-/* ---------- 首次使用提示 ---------- */
-
-/* 刻意**不铺满窗口**：底下的翻译照常在跑，让用户瞥得见译文已经出来了，
-   点掉就能看。铺满会让人以为程序卡在这一层上。 */
-.onboard {
-  position: absolute;
-  z-index: 30;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 18px;
-  /* 用 crust（每个风味里最深的那档）而不是裸黑，浅色主题下纯黑罩子显得脏 */
-  background: color-mix(in srgb, var(--ctp-crust) 55%, transparent);
-  animation: onboard-in 160ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-
-.onboard[hidden] {
-  /* .onboard 的 display:flex 是作者样式，压得过 [hidden] 的浏览器默认规则 ——
-     不写这条，hidden = true 设了等于没设。设置页那边踩过同样的坑。 */
-  display: none;
-}
-
-.onboard-card {
-  max-width: 460px;
-  padding: 18px 20px 16px;
-  border: 1px solid var(--ctp-surface1);
-  border-radius: 14px;
-  background: var(--ctp-base);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--ctp-crust) 50%, transparent);
-  animation: onboard-card-in 180ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-
-.onboard-card h2 {
-  margin: 0 0 10px;
-  font-size: 1.05em;
-  font-weight: 700;
-}
-
-.onboard-card ul {
-  margin: 0;
-  padding-left: 18px;
-  color: var(--ctp-subtext0);
-  font-size: 0.9em;
-  line-height: 1.75;
-}
-
-.onboard-card li + li {
-  margin-top: 5px;
-}
-
-/* 提示里的按键。跟正文同一档字号会糊成一片，得看着像"一个键" */
-.onboard-card kbd {
-  padding: 1px 6px;
-  border: 1px solid var(--ctp-surface2);
-  border-radius: 5px;
-  background: var(--ctp-surface0);
-  color: var(--ctp-text);
-  font-family: inherit;
-  font-size: 0.92em;
-  white-space: nowrap;
-}
-
-.btn-primary {
-  display: block;
-  margin: 14px 0 0 auto;
-  padding: 6px 16px;
-  border: none;
-  border-radius: 9px;
-  background: var(--ctp-blue);
-  color: var(--ctp-base);
-  font-family: inherit;
-  font-size: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 130ms ease;
-}
-
-.btn-primary:hover {
-  background: color-mix(in srgb, var(--ctp-blue) 85%, white);
-}
-
-.btn-primary:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ctp-blue) 45%, transparent);
-}
-
-@keyframes onboard-in {
-  from {
-    opacity: 0;
-  }
-}
-
-@keyframes onboard-card-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.98);
   }
 }

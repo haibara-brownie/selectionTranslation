@@ -121,3 +121,26 @@ pub fn dismiss_onboarding() -> Result<(), String> {
     cfg.onboarded = true;
     cfg.save().map_err(|e| format!("配置写入失败：{e}"))
 }
+
+/// 新手引导当前走到第几步。
+///
+/// 两个窗口都要读它 —— 引导跨窗口，而弹窗和设置页是各自独立的 webview，
+/// 只能靠后端这一份状态对齐。
+#[tauri::command]
+pub fn tour_step() -> u32 {
+    let cfg = Config::load();
+    // 已经走完或跳过的，不该再被任何窗口捡起来
+    if cfg.onboarded {
+        u32::MAX
+    } else {
+        cfg.tour_step
+    }
+}
+
+/// 记下引导走到哪一步。前进、后退、跨窗口交接都走它。
+#[tauri::command]
+pub fn set_tour_step(step: u32) -> Result<(), String> {
+    let mut cfg = Config::load();
+    cfg.tour_step = step;
+    cfg.save().map_err(|e| format!("配置写入失败：{e}"))
+}

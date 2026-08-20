@@ -12,7 +12,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { enhanceAll } from "./lib/dropdown";
-import { formatShortcut } from "./lib/keys";
+import { startTour, syncTour } from "./lib/tour";
+import { buildSteps } from "./lib/tour-steps";
 
 type PromptOption = { id: string; name: string; icon: string };
 type ProviderOption = { id: string; name: string; model: string; models: string[] };
@@ -70,10 +71,6 @@ const ui = {
   copy: el<HTMLButtonElement>("copy"),
   settings: el<HTMLButtonElement>("settings"),
   close: el<HTMLButtonElement>("close"),
-  onboard: el<HTMLDivElement>("onboard"),
-  onboardTitle: el<HTMLHeadingElement>("onboard-title"),
-  onboardTips: el<HTMLUListElement>("onboard-tips"),
-  onboardOk: el<HTMLButtonElement>("onboard-ok"),
 };
 
 let state: UiState | null = null;
@@ -163,63 +160,46 @@ function updateCount() {
 }
 
 /**
- * 首次使用提示。
+ * 新手引导。
  *
- * 快捷键一律来自后端（`s.hotkeys`）—— 三个平台默认值不同，用户还能自己改，
- * 前端写死等于教错人。托盘那条也分平台措辞：mac 叫「菜单栏」，另两家叫「托盘」。
+ * 从 T-13 那张静态卡片换成了**跨窗口的分步指引** —— 静态卡片只能"告诉你有哪些键"，
+ * 解决不了本程序真正的门槛：一个供应商都没配的时候，按什么键都翻不出东西。
+ *
+ * 快捷键一律来自后端（`s.hotkeys`），三个平台不同、用户还能改，写死就是教错人。
  */
-function renderOnboarding(s: UiState) {
-  if (!s.onboarding) {
-    ui.onboard.hidden = true;
-    return;
-  }
+async function startOnboarding(s: UiState) {
+  if (!s.onboarding) return;
 
-  const isMac = s.os === "macos";
-  const key = (i: 0 | 1) => formatShortcut(s.hotkeys[i], isMac);
-  const trayWord = isMac ? "菜单栏图标" : "托盘图标";
-
-  // 一个供应商都没配的时候，罗列快捷键没有意义 —— 按了也翻不出东西。
-  // 第一句必须是「先去加一个供应商」。
-  const tips = s.configured
-    ? [
-        `选中任意界面里的文字，按 <kbd>${key(0)}</kbd>，译文就浮出来`,
-        `不想选也行：直接在上面的输入框里敲，<kbd>Ctrl</kbd>+<kbd>↩</kbd> 翻译`,
-        "顶部换翻译风格、底部换模型，换完会自动重译同一段",
-        `<kbd>Esc</kbd> 收起弹窗；${trayWord}左键开输入框、中键翻译选中的文字`,
-        `设置在 <kbd>${key(1)}</kbd>`,
-      ]
-    : [
-        `还没配模型供应商 —— 先按 <kbd>${key(1)}</kbd> 打开设置，在「供应商」页加一个`,
-        "选一家预设，接口类型和 base_url 会自动填好，通常你只要补一个 API key",
-        `配好之后，选中文字按 <kbd>${key(0)}</kbd> 就能翻译`,
-      ];
-
-  ui.onboardTitle.textContent = s.configured ? "怎么用" : "还差一步";
-  ui.onboardTips.replaceChildren(
-    ...tips.map((t) => {
-      const li = document.createElement("li");
-      // 文案是本文件里的字面量，没有外来输入，用 innerHTML 才能排 <kbd>
-      li.innerHTML = t;
-      return li;
-    }),
-  );
-  ui.onboard.hidden = false;
-}
-
-async function dismissOnboarding() {
-  // 先关界面再落盘：写配置失败不该让用户一直看着这一层
-  ui.onboard.hidden = true;
-  try {
-    await invoke("dismiss_onboarding");
-  } catch (e) {
-    setStatus(`提示已关闭，但没能记住（${e}）`, true);
-  }
+  const steps = buildSteps({ hotkeys: s.hotkeys, os: s.os });
+  await startTour({
+    window: "popup",
+    steps,
+    getStep: () => invoke<number>("tour_step"),
+    setStep: async (step) => {
+      await invoke("set_tour_step", { step });
+      // 第 3 步开始在设置窗口里，顺手替用户开一下 —— 让他自己找齿轮
+      // 就等于引导断在这儿了
+      if (steps[step]?.window === "settings") {
+        try {
+          await invoke("open_settings", { page: "providers" });
+        } catch (e) {
+          setStatus(String(e), true);
+        }
+      }
+    },
+    finish: async () => {
+      try {
+        await invoke("dismiss_onboarding");
+      } catch (e) {
+        setStatus(`引导已关闭，但没能记住（${e}）`, true);
+      }
+    },
+  });
 }
 
 function renderState(s: UiState) {
   state = s;
   ui.theme.textContent = s.css;
-  renderOnboarding(s);
 
   ui.prompt.replaceChildren(
     ...s.prompts.map((p) => {
@@ -359,17 +339,10 @@ function wire() {
     setStatus(providerLabel());
   });
 
-  ui.onboardOk.addEventListener("click", () => void dismissOnboarding());
-
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      // 提示盖着的时候，Esc 先收提示 —— 用户多半是想看底下已经翻好的译文，
-      // 而不是把窗口关掉重来
-      if (!ui.onboard.hidden) {
-        e.preventDefault();
-        void dismissOnboarding();
-        return;
-      }
+      // 引导气泡自己带「跳过」，不劫持 Esc —— 引导是浮层不是模态，
+      // 底下的功能照常能用，Esc 就该照常关窗
       dismiss();
       return;
     }
@@ -439,10 +412,16 @@ async function boot() {
     }
     playEnter();
     await apply(ev.payload);
+    // 用户可能刚在设置窗口里把引导推进了几步，回到弹窗要接上
+    await syncTour();
   });
 
   playEnter();
   await apply(launch);
+
+  // 引导放在最后：翻译先跑起来，引导盖在上面。反过来会让第一次打开
+  // 白等一秒才看到译文开始流。
+  await startOnboarding(s);
 }
 
 const dark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;

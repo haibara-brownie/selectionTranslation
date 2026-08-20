@@ -1,0 +1,204 @@
+/* 新手引导的气泡。**两个窗口共用**，所以单独一个文件。
+ *
+ * 气泡挂 document.body + position: fixed —— 就地绝对定位会被祖先的 overflow: hidden
+ * 裁掉（自绘下拉那次踩过，提交 6b7d5a1）。位置由 JS 按锚点的 rect 算，见 lib/tour.ts。
+ */
+
+.tour-bubble {
+  position: fixed;
+  /* 压在自绘下拉的浮层（z-index 20~30）之上，但别盖住模态框的遮罩逻辑 */
+  z-index: 60;
+  width: max-content;
+  max-width: min(340px, calc(100vw - 24px));
+  padding: 13px 15px 11px;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 12px;
+  background: var(--ctp-base);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--ctp-crust) 55%, transparent);
+  font-size: 0.9em;
+  line-height: 1.65;
+  animation: tour-in 170ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+/* 开场和收尾那两步没有锚点，摆屏幕正中 */
+.tour-bubble.tour-center {
+  top: 50%;
+  left: 50%;
+  max-width: min(400px, calc(100vw - 40px));
+  transform: translate(-50%, -50%);
+  animation-name: tour-center-in;
+}
+
+.tour-bubble h3 {
+  margin: 0 0 7px;
+  font-size: 1.02em;
+  font-weight: 700;
+}
+
+.tour-body {
+  color: var(--ctp-subtext0);
+}
+
+.tour-body p {
+  margin: 0 0 6px;
+}
+
+.tour-body p:last-child {
+  margin-bottom: 0;
+}
+
+.tour-body kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--ctp-surface2);
+  border-radius: 5px;
+  background: var(--ctp-surface0);
+  color: var(--ctp-text);
+  font-family: inherit;
+  font-size: 0.92em;
+  white-space: nowrap;
+}
+
+.tour-body code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--ctp-surface0);
+  color: var(--ctp-text);
+  font-family: inherit;
+  font-size: 0.94em;
+}
+
+/* ---------- 箭头 ---------- */
+
+/* 一个旋转 45° 的方块，靠边框只留两条边做出"尖角"的样子。
+   位置由 JS 设（气泡被夹回视口后，箭头不一定在正中）。 */
+.tour-arrow {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--ctp-base);
+  transform: rotate(45deg);
+}
+
+.tour-bubble[data-placement="bottom"] .tour-arrow {
+  top: -6px;
+  margin-left: -5px;
+  border-top: 1px solid var(--ctp-surface1);
+  border-left: 1px solid var(--ctp-surface1);
+}
+
+.tour-bubble[data-placement="top"] .tour-arrow {
+  bottom: -6px;
+  margin-left: -5px;
+  border-right: 1px solid var(--ctp-surface1);
+  border-bottom: 1px solid var(--ctp-surface1);
+}
+
+.tour-bubble[data-placement="right"] .tour-arrow {
+  left: -6px;
+  margin-top: -5px;
+  border-bottom: 1px solid var(--ctp-surface1);
+  border-left: 1px solid var(--ctp-surface1);
+}
+
+.tour-bubble[data-placement="left"] .tour-arrow {
+  right: -6px;
+  margin-top: -5px;
+  border-top: 1px solid var(--ctp-surface1);
+  border-right: 1px solid var(--ctp-surface1);
+}
+
+/* ---------- 页脚 ---------- */
+
+.tour-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.tour-count {
+  margin-right: auto;
+  color: var(--ctp-overlay0);
+  font-size: 0.82em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-skip,
+.tour-next {
+  padding: 5px 13px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.94em;
+  cursor: pointer;
+  transition: background-color 130ms ease;
+}
+
+.tour-skip {
+  border: none;
+  background: transparent;
+  color: var(--ctp-overlay1);
+}
+
+.tour-skip:hover {
+  background: var(--ctp-surface0);
+  color: var(--ctp-text);
+}
+
+.tour-next {
+  border: none;
+  background: var(--ctp-blue);
+  color: var(--ctp-base);
+  font-weight: 600;
+}
+
+.tour-next:hover {
+  background: color-mix(in srgb, var(--ctp-blue) 85%, white);
+}
+
+.tour-skip:focus-visible,
+.tour-next:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ctp-blue) 45%, transparent);
+}
+
+/* ---------- 被指着的那个控件 ---------- */
+
+/* 只描一圈光晕，**不加遮罩**：引导是浮层不是模态，底下的控件照常要能点 ——
+   用户点了真的按钮就自动前进，这比逼他点「下一步」自然得多。 */
+.tour-target {
+  position: relative;
+  z-index: 55;
+  border-radius: 9px;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--ctp-blue) 55%, transparent),
+    0 0 0 9px color-mix(in srgb, var(--ctp-blue) 18%, transparent);
+  animation: tour-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes tour-pulse {
+  50% {
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--ctp-blue) 75%, transparent),
+      0 0 0 13px color-mix(in srgb, var(--ctp-blue) 8%, transparent);
+  }
+}
+
+@keyframes tour-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.98);
+  }
+}
+
+@keyframes tour-center-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 8px)) scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-target {
+    animation: none;
+  }
+}

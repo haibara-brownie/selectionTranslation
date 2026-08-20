@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>划词翻译</title>
     <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./tour.css" />
     <link rel="stylesheet" href="./dropdown.css" />
     <!-- 调色板与字体分档由 Rust 生成后注入，见 popup.ts -->
     <style id="theme"></style>
@@ -56,22 +57,6 @@
         </div>
         <span id="status" class="status"></span>
       </footer>
-
-      <!--
-        首次使用提示。默认 hidden，由 popup.ts 按 UiState.onboarding 决定要不要显示。
-
-        条目文字**不写死在这里**：里面要嵌真实的快捷键，而三个平台默认值不同、
-        用户还能自己改（见 T-13 的约束 1）。一份说谎的教程比没有更糟。
-
-        刻意不铺满窗口，也不拦住底下的翻译 —— 译文照常跑，点掉就能看见结果。
-      -->
-      <div id="onboard" class="onboard" hidden>
-        <div class="onboard-card">
-          <h2 id="onboard-title">怎么用</h2>
-          <ul id="onboard-tips"></ul>
-          <button id="onboard-ok" class="btn-primary">我会用</button>
-        </div>
-      </div>
     </div>
 
     <script type="module" src="./popup.ts"></script>

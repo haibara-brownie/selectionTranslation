@@ -195,6 +195,8 @@ fn main() {
             cmds::set_active_prompt,
             cmds::set_active_model,
             cmds::dismiss_onboarding,
+            cmds::tour_step,
+            cmds::set_tour_step,
             settings_cmds::load_config,
             settings_cmds::save_config,
             settings_cmds::theme_css,
