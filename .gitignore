@@ -16,8 +16,9 @@ venv/
 /dist/
 /src-tauri/gen/
 
-# AUR 打包产物
-packaging/aur/src/
-packaging/aur/pkg/
-packaging/aur/*.tar.gz
-packaging/aur/*.pkg.tar.zst
+# makepkg 的构建残留（aur/ 与 arch/ 两处都会产生，所以用通配）
+# src/ 是解压+编译目录，一次 release 构建能撑到 1.6G
+packaging/*/src/
+packaging/*/pkg/
+packaging/*/*.tar.gz
+packaging/*/*.pkg.tar.zst
