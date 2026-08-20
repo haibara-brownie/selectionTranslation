@@ -22,3 +22,8 @@
 - [2026-08-20 21:22] 坑 | **Tauri 二进制必须用 `pnpm tauri build`，`cargo build --release` 编出来的跑不起来**（`dev = !has_feature("custom-protocol")`，只有 tauri build 会加，跟 profile 无关）。已写进 README 与 docs/切到-tauri-版.md | —
 - [2026-08-20 21:22] 环境 | Tauri 的 niri 窗口规则此前从没装到 Arch 上（install.sh 是安装动作，验证时不跑）。已备份后手工加进 ~/.config/niri/selectiontranslation.kdl | —
 - [2026-08-20 21:22] 工具 | safekey.sh（带 trap 的安全按键）与 shoot.sh（无头嵌套会话截图）从 .scratch 挪进 docs/workbench/tools/，两台机器共用 | —
+- [2026-08-20 22:00] 功能 | T-13 首次提示做完（前端三处 + UiState.os）。修两个 CSS 坑：`.shell` 缺 position:relative 会让罩子把圆角画成方角；`.onboard[hidden]` 要显式 display:none | 打包
+- [2026-08-20 22:15] 打包 | 首次在 Arch 上打 Linux 包。deb/rpm 各 6.7MB 正常；AppImage 两个坑：linuxdeploy 的 strip 不认 .relr.dyn（NO_STRIP=1 可绕），且它强制 GDK_BACKEND=x11 让 AppImage 跑在 XWayland 上、app-id 首字母变大写导致 niri 规则失效（已用 (?i) 修）| 见 T-14
+- [2026-08-20 23:50] P5 | **install.sh 改装 Tauri 版**（用户说旧的不用留）。依赖换 webkit2gtk-4.1+gtk3+pnpm，编译走 `pnpm tauri build --no-bundle`。~/.local/bin/seltrans 现在是 0.3.0 Tauri 版 | 引导
+- [2026-08-20 23:55] CI | **加 mac/Windows 编译检查**。原来只跑 Linux，理由是 runner 计费倍率，但那只对私有仓库生效、本仓库是公开的。这次 push 第一次真正编译了 Mac 侧写的 Windows UIA 取词代码，全过 | —
+- [2026-08-21 00:30] 功能 | 新手引导从静态卡片换成**跨窗口七步指引**（onboarding-tour/T-01）。实机验过前四步含跨窗口交接与对话框锚点；修掉「锚点脱落后气泡指着空气」的 bug | 打 Arch 包
