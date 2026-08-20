@@ -148,13 +148,18 @@ fn main() {
     // 托盘模式只常驻、不开窗口，等用户点图标或按快捷键
     let tray_mode = matches!(cmd.as_str(), "tray" | "daemon");
 
-    // **取词赶在这里做**：Tauri 一旦起来、窗口一旦拿到焦点，模拟出来的复制键就
-    // 发给我们自己了。托盘模式不取词（没人在等结果）。
-    let req = if tray_mode || cmd == "settings" || cmd == "config" {
-        req
-    } else {
-        windows::prepare(req)
-    };
+    // 取词**不在这里做**，交给 `windows::dispatch`（它在开窗之前取，时序照样是对的）。
+    //
+    // 早先这里会先取一次词再进 Tauri，结果是**一次触发取两遍**：本进程取一次，
+    // 而一旦发现已有常驻实例，single-instance 插件会把 argv 转交过去、本进程立刻退出，
+    // 刚取的结果直接丢掉；常驻实例在回调里又取一遍。兜底路径上这意味着两轮
+    // 「抬修饰键 → 模拟复制 → 等剪贴板 → 还原」，Electron 场景实测剪贴板 changeCount
+    // 被推 79 → 81，用户的剪贴板在一次翻译里被改写还原两遍。Linux 上这还是日常主路径。
+    //
+    // 为什么挪进去就够了：**次要进程根本走不到我们的 `setup()`** —— single-instance 是
+    // 插件，它的 setup 钩子先于应用的 setup 跑，发现已有实例就直接 `exit`。于是
+    // 「会开窗的路」只剩两条，都归 dispatch：主实例的 setup、常驻实例的 single-instance
+    // 回调。一次触发只可能命中其中一条。
     let boot = (cmd.clone(), req.clone(), page);
 
     let builder = tauri::Builder::default()
@@ -232,16 +237,12 @@ fn main() {
 
             if !tray_mode {
                 let (cmd, req, page) = boot;
-                // 这一路的取词在进 Tauri 之前就做完了，别再 prepare 一次
-                let r = match cmd.as_str() {
-                    "settings" | "config" => {
-                        windows::open_settings(&handle, page.as_deref()).map(|_| ())
-                    }
-                    _ => windows::open_popup(&handle, req).map(|_| ()),
-                };
-                if let Err(e) = r {
-                    logging::error(&format!("打开窗口失败：{e}"));
-                }
+                // 走 dispatch 而不是自己分派：取词和开窗的时序归它管，和常驻实例那条路
+                // 用同一套规矩。这也是「一次触发只取一次词」的落点（见上面 boot 处的注释）。
+                //
+                // 时序仍然成立：这会儿一个窗口都还没建出来，取词在 open_popup 之前完成。
+                // mac 上更早一步已经把激活策略设成 Accessory，进程不会把前台应用挤下去。
+                windows::dispatch(&handle, &cmd, req, page.as_deref());
             }
             Ok(())
         })
