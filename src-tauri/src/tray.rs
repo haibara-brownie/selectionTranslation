@@ -305,80 +305,6 @@ mod imp {
 
     const TITLE: &str = "划词翻译";
 
-    /// 托盘图标。Windows 直接解 PNG；macOS 现场把单色 SVG 光栅化成 RGBA。
-    ///
-    /// mac 这边不预先烤一张 PNG 进仓库：几何数据已经在 SVG 里了，再存一份位图就是两个
-    /// 事实源，改图标时必然漏改一个。Linux 那边（ksni）本来就是现场光栅化的，这里用的
-    /// 是同一套 resvg，只是终点从 SNI 的 ARGB 换成 Tauri 的 RGBA。
-    #[cfg(not(target_os = "macos"))]
-    fn tray_image() -> Result<Image<'static>, String> {
-        Image::from_bytes(ICON_PNG).map_err(|e| format!("托盘图标解码失败：{e}"))
-    }
-
-    /// 菜单栏图标按 22pt 排版，Retina 下要 2 倍像素才不糊
-    #[cfg(target_os = "macos")]
-    const MONO_SIZE: u32 = 44;
-
-    /// 把单色 SVG 光栅化成不预乘的 RGBA。拆出来是为了能单测 —— 模板图标画糊了
-    /// （比如 mask 没生效导致全透明）在菜单栏上看不出来，只会"图标消失"。
-    #[cfg(target_os = "macos")]
-    fn mono_rgba() -> Result<Vec<u8>, String> {
-        use resvg::tiny_skia;
-
-        let opt = resvg::usvg::Options::default();
-        let tree = resvg::usvg::Tree::from_data(ICON_MONO_SVG, &opt)
-            .map_err(|e| format!("单色托盘图标解析失败：{e}"))?;
-        let mut pixmap = tiny_skia::Pixmap::new(MONO_SIZE, MONO_SIZE)
-            .ok_or("分配托盘图标位图失败".to_string())?;
-        let scale = tiny_skia::Transform::from_scale(
-            MONO_SIZE as f32 / tree.size().width(),
-            MONO_SIZE as f32 / tree.size().height(),
-        );
-        resvg::render(&tree, scale, &mut pixmap.as_mut());
-
-        // tiny-skia 出来的是**预乘** RGBA，Tauri 的 Image 要的是不预乘的
-        let mut rgba = Vec::with_capacity((MONO_SIZE * MONO_SIZE * 4) as usize);
-        for px in pixmap.pixels() {
-            let c = px.demultiply();
-            rgba.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
-        }
-        Ok(rgba)
-    }
-
-    #[cfg(target_os = "macos")]
-    fn tray_image() -> Result<Image<'static>, String> {
-        Ok(Image::new_owned(mono_rgba()?, MONO_SIZE, MONO_SIZE))
-    }
-
-    #[cfg(all(test, target_os = "macos"))]
-    mod tests {
-        use super::*;
-
-        /// 模板图标只认 alpha。画成一片空白（mask 没生效之类）在菜单栏上是看不出来的
-        /// —— 表现只是"图标不见了"，很难往光栅化上想。这里把它钉死。
-        #[test]
-        fn 单色托盘图标要有内容也要有镂空() {
-            let rgba = mono_rgba().expect("光栅化失败");
-            let total = (MONO_SIZE * MONO_SIZE) as usize;
-            assert_eq!(rgba.len(), total * 4);
-
-            let opaque = rgba.chunks_exact(4).filter(|p| p[3] > 128).count();
-            let clear = rgba.chunks_exact(4).filter(|p| p[3] < 32).count();
-
-            // 两只气泡大致占画面三成上下；低于一成说明基本没画出来
-            assert!(
-                opaque * 10 > total,
-                "不透明像素只有 {opaque}/{total}，图标基本是空白的"
-            );
-            // 字形是挖空的，加上四角留白，透明像素必然占大头；
-            // 全不透明说明 mask 没生效，那样在菜单栏上就是一坨黑块
-            assert!(
-                clear * 3 > total,
-                "透明像素只有 {clear}/{total}，字形没被挖空，模板图标会变成黑块"
-            );
-        }
-    }
-
     pub fn spawn(app: &AppHandle) -> Result<Inner, String> {
         let icons = render_icons();
         if icons.is_empty() {
@@ -682,9 +608,8 @@ mod imp {
 
     /// macOS 菜单栏用单色模板图。
     ///
-    /// 模板图标**只认 alpha 通道**，系统按明暗主题自己上色 —— 彩色那份的字形是浅色实心
-    /// 填充、alpha 满格，直接拿来当模板会变成两坨看不出内容的黑块。单色那份把字形挖成
-    /// 了洞，靠镂空来读（见 data/tray-mono.svg 的注释）。
+    /// 模板图标只认 alpha，系统按菜单栏明暗自己上色。这里用简化的选区和镂空箭头，
+    /// 不把彩色应用图标硬压成单色（见 data/tray-mono.svg）。
     #[cfg(target_os = "macos")]
     const ICON_MONO_SVG: &[u8] = include_bytes!("../../data/tray-mono.svg");
 
@@ -758,16 +683,16 @@ mod imp {
             let opaque = rgba.chunks_exact(4).filter(|p| p[3] > 128).count();
             let clear = rgba.chunks_exact(4).filter(|p| p[3] < 32).count();
 
-            // 两只气泡大致占画面三成上下；低于一成说明基本没画出来
+            // 选区条和角标约占画面两成；低于一成说明基本没画出来
             assert!(
                 opaque * 10 > total,
                 "不透明像素只有 {opaque}/{total}，图标基本是空白的"
             );
-            // 字形是挖空的，加上四角留白，透明像素必然占大头；
+            // 箭头是挖空的，加上四周留白，透明像素必然占大头；
             // 全不透明说明 mask 没生效，那样在菜单栏上就是一坨黑块
             assert!(
                 clear * 3 > total,
-                "透明像素只有 {clear}/{total}，字形没被挖空，模板图标会变成黑块"
+                "透明像素只有 {clear}/{total}，箭头没被挖空，模板图标会变成黑块"
             );
         }
     }
@@ -783,9 +708,8 @@ mod imp {
             .menu(&menu)
             // 左键留给「打开输入框」，右键才弹菜单
             .show_menu_on_left_click(false)
-            // macOS 上用模板图标，系统会按菜单栏明暗自己上色；另两家用彩色原图。
-            // 能这么做的前提是 tray_image() 在 mac 上给的是挖空字形的单色图 ——
-            // 拿彩色那份当模板只会得到两坨黑块。
+            // macOS 上用简化模板图标，系统会按菜单栏明暗自己上色；另两家用彩色图。
+            // 不能拿彩色应用图标直接当模板：模板只认 alpha，会丢失内部颜色层级。
             .icon_as_template(cfg!(target_os = "macos"))
             .on_menu_event(on_menu_event)
             .on_tray_icon_event(on_icon_event)
