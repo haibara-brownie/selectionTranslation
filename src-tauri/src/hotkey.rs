@@ -44,13 +44,33 @@
 /// 设置页沿用同一组修饰键、换成逗号，跟「偏好设置 = ⌘,」的习惯对齐；这样两个键属于
 /// 同一个心理分组，好记。
 ///
-/// **这仍然是写死的默认值，仍然可能撞上别人**（装了 Bob、Raycast 并自定义过之类）。
-/// 撞上时 `register` 返回 Err，程序照常跑，托盘和命令行不受影响，但用户没法自己改键
-/// ——「快捷键可配置」另开一张票。
+/// **这只是默认值，可能撞上别人**（装了 Bob、Raycast 并自定义过之类）。撞上时
+/// `register` 返回 Err，程序照常跑（托盘和命令行不受影响），用户可以在设置页里改成
+/// 别的组合 —— 见 `configured` 和 `reload`。
 #[cfg(not(target_os = "linux"))]
-const TRANSLATE: &str = "Alt+Shift+T";
+const DEFAULT_TRANSLATE: &str = "Alt+Shift+T";
 #[cfg(not(target_os = "linux"))]
-const SETTINGS: &str = "Alt+Shift+Comma";
+const DEFAULT_SETTINGS: &str = "Alt+Shift+Comma";
+
+/// 当前该注册哪两组键：配置里非空就用配置的，否则用上面的默认值。
+///
+/// 每次都现读配置而不是缓存：改键之后要立刻重新注册，缓存只会多一个失效点。
+/// 读一次配置是一次小文件 IO，发生在改键和启动时，不在取词热路径上。
+#[cfg(not(target_os = "linux"))]
+fn configured() -> (String, String) {
+    let cfg = seltrans_core::config::Config::load();
+    let pick = |v: String, d: &str| {
+        if v.trim().is_empty() {
+            d.to_string()
+        } else {
+            v
+        }
+    };
+    (
+        pick(cfg.hotkey_translate, DEFAULT_TRANSLATE),
+        pick(cfg.hotkey_settings, DEFAULT_SETTINGS),
+    )
+}
 
 /// 把全局快捷键插件挂到 builder 上，Linux 上是恒等变换。
 ///
@@ -87,51 +107,82 @@ pub fn register(_app: &tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(not(target_os = "linux"))]
 pub fn register(app: &tauri::AppHandle) -> Result<(), String> {
-    use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
     use crate::windows::{self, TranslateRequest};
 
+    let (t, s) = configured();
+    let translate: Shortcut = t
+        .parse()
+        .map_err(|e| format!("翻译快捷键「{t}」不是合法的组合：{e}"))?;
+    let settings: Shortcut = s
+        .parse()
+        .map_err(|e| format!("设置快捷键「{s}」不是合法的组合：{e}"))?;
+
     let handle = app.clone();
     app.global_shortcut()
-        .on_shortcuts([TRANSLATE, SETTINGS], move |_app, shortcut, event| {
+        .on_shortcuts([translate, settings], move |_app, shortcut, event| {
             // 按下和抬起各来一次，只认按下那次，否则会翻译两遍
             if event.state() != ShortcutState::Pressed {
                 return;
             }
-            let s = shortcut.to_string();
+            // 比对解析后的 Shortcut 而不是字符串：用户配出来的写法和 `to_string()`
+            // 归一化之后未必一致（大小写、别名如 Ctrl/Control），比字符串会漏判
+            let is_settings = *shortcut == settings;
             let h = handle.clone();
             // 取词和开窗都得在主线程上做，而且取词要赶在窗口抢焦点之前
             let _ = h.clone().run_on_main_thread(move || {
-                if s == SETTINGS {
-                    windows::dispatch(&h, "settings", TranslateRequest::default(), None);
-                } else {
-                    windows::dispatch(&h, "popup", TranslateRequest::default(), None);
-                }
+                let cmd = if is_settings { "settings" } else { "popup" };
+                windows::dispatch(&h, cmd, TranslateRequest::default(), None);
             });
         })
-        .map_err(|e| format!("注册全局快捷键失败：{e}"))?;
+        .map_err(|e| format!("注册全局快捷键失败（多半是被别的程序占用了）：{e}"))?;
 
-    seltrans_core::logging::info(&format!(
-        "已注册全局快捷键：{TRANSLATE}（翻译）/ {SETTINGS}（设置）"
-    ));
+    seltrans_core::logging::info(&format!("已注册全局快捷键：{t}（翻译）/ {s}（设置）"));
     Ok(())
 }
 
+/// 改键之后重新注册。
+#[cfg(target_os = "linux")]
+pub fn reload(_app: &tauri::AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn reload(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+    // 先把旧的全撤掉。不撤的话旧组合还占着系统，用户改完键会发现新旧两套都能触发，
+    // 而且旧的那套还挡着别的程序
+    if let Err(e) = app.global_shortcut().unregister_all() {
+        seltrans_core::logging::warn(&format!("撤销旧快捷键失败：{e}"));
+    }
+    register(app)
+}
+
+/// 当前生效的两组键：(翻译, 设置)。Linux 上返回 niri 配置里那两条，只作展示。
+pub fn current() -> (String, String) {
+    #[cfg(target_os = "linux")]
+    {
+        ("Mod+Shift+T".to_string(), "Mod+Alt+T".to_string())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        configured()
+    }
+}
+
 /// 给「关于」页和帮助文本用：这个平台上快捷键是怎么来的。
-pub fn describe() -> &'static str {
+pub fn describe() -> String {
     #[cfg(target_os = "linux")]
     {
         "由合成器提供（Wayland 没有全局快捷键协议）。改键请编辑 \
          ~/.config/niri/selectiontranslation.kdl"
+            .to_string()
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
-        "⌥⇧T 翻译选中文本，⌥⇧, 打开设置。刻意避开 ⌘⇧T / ⌘⌥T —— \
-         全局快捷键是系统级独占的，占了它们等于废掉浏览器的「重开标签页」和「显示工具栏」"
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        "Alt+Shift+T 翻译选中文本，Alt+Shift+, 打开设置。刻意避开 Ctrl+Shift+T —— \
-         全局快捷键是系统级独占的，占了它等于废掉浏览器的「重新打开关闭的标签页」"
+        let (t, s) = configured();
+        format!("{t} 翻译选中文本，{s} 打开设置。可在设置页改键")
     }
 }

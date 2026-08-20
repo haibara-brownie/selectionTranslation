@@ -418,3 +418,54 @@ body.settings .shell {
   padding: 12px 18px;
   background: var(--ctp-mantle);
 }
+
+/* ---------- 快捷键录制 ---------- */
+
+.hotkey {
+  min-width: 132px;
+  padding: 6px 12px;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 8px;
+  background: var(--ctp-mantle);
+  color: var(--ctp-text);
+  font-family: inherit;
+  font-size: inherit;
+  /* 组合键要一眼能读，字距松一点 */
+  letter-spacing: 0.04em;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 130ms ease, background-color 130ms ease, box-shadow 130ms ease;
+}
+
+.hotkey:hover {
+  background: var(--ctp-surface0);
+}
+
+/* 录制中：边框和底色都换掉，让"现在按什么都会被抓走"这件事一目了然 */
+.hotkey.recording {
+  border-color: var(--ctp-mauve);
+  background: color-mix(in srgb, var(--ctp-mauve) 16%, var(--ctp-mantle));
+  color: var(--ctp-mauve);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ctp-mauve) 22%, transparent);
+}
+
+.hotkey:focus-visible {
+  outline: none;
+  border-color: var(--ctp-blue);
+}
+
+/* 「默认」这类次要动作，做成文字链的样子，别跟主控件抢注意力 */
+.linklike {
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--ctp-overlay1);
+  font-family: inherit;
+  font-size: 0.86em;
+  cursor: pointer;
+}
+
+.linklike:hover {
+  color: var(--ctp-blue);
+  text-decoration: underline;
+}

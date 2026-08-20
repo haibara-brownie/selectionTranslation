@@ -71,6 +71,17 @@ pub struct Config {
     /// system / latte / frappe / macchiato / mocha
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// 全局快捷键，留空表示用内置默认值。
+    ///
+    /// **Linux 上这两个字段不生效**：那边快捷键归合成器管（Wayland 没有全局快捷键协议），
+    /// 改键要编辑 `~/.config/niri/selectiontranslation.kdl`。字段照样保留，
+    /// 免得多机共用一份配置时被来回覆盖。
+    ///
+    /// 格式是 Tauri 的快捷键语法，如 `Alt+Shift+T`、`Control+Alt+Comma`。
+    #[serde(default)]
+    pub hotkey_translate: String,
+    #[serde(default)]
+    pub hotkey_settings: String,
     /// 三档字体，留空表示用系统默认
     #[serde(default)]
     pub font_latin: String,
@@ -129,6 +140,8 @@ impl Default for Config {
             target_lang: default_lang(),
             selection_mode: default_sel_mode(),
             theme: default_theme(),
+            hotkey_translate: String::new(),
+            hotkey_settings: String::new(),
             font_latin: String::new(),
             font_cjk: String::new(),
             font_fallback: String::new(),

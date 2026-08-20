@@ -324,3 +324,48 @@ pub fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<(), String> {
     let r = if on { m.enable() } else { m.disable() };
     r.map_err(|e| format!("设置开机自启失败：{e}"))
 }
+
+/// 当前生效的两组全局快捷键：(翻译, 设置)。
+///
+/// 返回的是**生效值**而不是配置里的原始值 —— 配置留空表示"用内置默认"，
+/// 界面上要显示的是用户实际按什么键，不是一个空框。
+#[tauri::command]
+pub fn hotkeys() -> (String, String) {
+    crate::hotkey::current()
+}
+
+/// 改键：校验 → 落盘 → 立刻重新注册。
+///
+/// **刻意不走 `save_config`。** 那条路是防抖的（前端改一个字段 250ms 后才写），
+/// 而改键需要当场知道成不成 —— 组合被别的程序占了、或者写法不合法，用户得马上看到，
+/// 而不是过一会儿发现快捷键不好使。所以这里是同步的、带返回值的独立命令。
+///
+/// 传空串表示"恢复内置默认"。
+#[tauri::command]
+pub fn set_hotkeys(
+    app: tauri::AppHandle,
+    translate: String,
+    settings: String,
+) -> Result<(), String> {
+    if !translate.trim().is_empty() && translate.trim() == settings.trim() {
+        return Err("两个快捷键不能设成同一个组合".into());
+    }
+
+    let mut cfg = Config::load();
+    let (old_t, old_s) = (cfg.hotkey_translate.clone(), cfg.hotkey_settings.clone());
+    cfg.hotkey_translate = translate.trim().to_string();
+    cfg.hotkey_settings = settings.trim().to_string();
+    cfg.save().map_err(|e| format!("配置写入失败：{e}"))?;
+
+    // 注册失败就把配置回滚。留着一份注册不上的配置，下次启动照样起不来，
+    // 而那时候用户已经不记得自己改过什么了
+    if let Err(e) = crate::hotkey::reload(&app) {
+        let mut back = Config::load();
+        back.hotkey_translate = old_t;
+        back.hotkey_settings = old_s;
+        let _ = back.save();
+        let _ = crate::hotkey::reload(&app);
+        return Err(e);
+    }
+    Ok(())
+}

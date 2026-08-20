@@ -72,6 +72,12 @@ export type AboutInfo = {
 // ---------- 命令 ----------
 
 export const api = {
+  /** 当前生效的两组全局快捷键：[翻译, 设置]。返回的是生效值，不是配置里的原始空串。 */
+  hotkeys: () => invoke<[string, string]>("hotkeys"),
+  /** 改键。传空串恢复内置默认。设不成会 reject，文案可以直接显示给用户。 */
+  setHotkeys: (translate: string, settings: string) =>
+    invoke<void>("set_hotkeys", { translate, settings }),
+
   loadConfig: () => invoke<Config>("load_config"),
   saveConfig: (config: Config) => invoke<void>("save_config", { config }),
 

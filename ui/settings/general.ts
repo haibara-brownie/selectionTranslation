@@ -6,7 +6,17 @@
  */
 
 import { api } from "../lib/api";
-import { actionRow, addRow, comboRow, entryRow, group, notice, searchComboRow, switchRow } from "../lib/dom";
+import {
+  actionRow,
+  addRow,
+  comboRow,
+  entryRow,
+  group,
+  hotkeyRow,
+  notice,
+  searchComboRow,
+  switchRow,
+} from "../lib/dom";
 import type { Ctx } from "../lib/shell";
 
 /** 目标语言下拉里「自定义…」那一项的哨兵值。真实语言名不会长这样，不怕撞。 */
@@ -84,7 +94,7 @@ export async function render(pane: HTMLElement, ctx: Ctx): Promise<void> {
     ...buildAppearance(ctx, themes, fonts),
     ...buildPopup(ctx),
     await buildAutostart(ctx),
-    ...buildShortcuts(isLinux),
+    ...(await buildShortcuts(isLinux, ctx)),
   );
 }
 
@@ -366,12 +376,54 @@ async function buildAutostart(ctx: Ctx): Promise<HTMLElement> {
 
 // ---------------------------------------------------------------- 快捷键
 
-function buildShortcuts(isLinux: boolean): HTMLElement[] {
+async function buildShortcuts(isLinux: boolean, ctx: Ctx): Promise<HTMLElement[]> {
   const g = group("快捷键");
 
   if (!isLinux) {
-    addRow(g, actionRow("全局快捷键", "这个平台的全局快捷键即将支持"));
-    return [g];
+    const isMac = ctx.os === "macos";
+    let [translate, settings] = ["", ""];
+    try {
+      [translate, settings] = await api.hotkeys();
+    } catch (e) {
+      addRow(g, actionRow("全局快捷键", `读不到当前快捷键：${e}`));
+      return [g];
+    }
+
+    // 两个键任何一个改动都要一起提交：后端是同步校验+注册的，分两次提交会出现
+    // "第一个已生效、第二个失败"的中间态，用户看到的界面和实际注册的对不上
+    const apply = async (next: { t?: string; s?: string }) => {
+      const t = next.t ?? translate;
+      const st = next.s ?? settings;
+      try {
+        await api.setHotkeys(t, st);
+        translate = t;
+        settings = st;
+        ctx.status("快捷键已更新");
+        ctx.rerender(); // 重画一遍，把"恢复默认"之后的实际生效值显示出来
+      } catch (e) {
+        ctx.status(String(e), "error");
+        throw e; // 让控件把自己退回原值
+      }
+    };
+
+    addRow(
+      g,
+      hotkeyRow("翻译选中文本", "在任何应用里按下它取词翻译", translate, isMac, (v) =>
+        apply({ t: v }),
+      ),
+    );
+    addRow(
+      g,
+      hotkeyRow("打开设置", undefined, settings, isMac, (v) => apply({ s: v })),
+    );
+
+    return [
+      g,
+      notice(
+        "全局快捷键是系统级独占的：注册之后所有应用里的这个组合都归 seltrans，别的程序收不到。" +
+          "所以默认值刻意避开了浏览器的「重新打开关闭的标签页」。设不上多半是被别的程序占了，换一组即可。",
+      ),
+    ];
   }
 
   for (const [key, what] of [

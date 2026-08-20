@@ -211,6 +211,8 @@ fn main() {
             settings_cmds::open_path,
             settings_cmds::autostart_enabled,
             settings_cmds::set_autostart,
+            settings_cmds::hotkeys,
+            settings_cmds::set_hotkeys,
         ])
         .setup(move |app| {
             // mac：常驻托盘的工具不该占 Dock 图标，也不该在启动时把前台应用挤下去。

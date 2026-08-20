@@ -260,3 +260,127 @@ export function statusRow(title: string, ok: boolean, note: string): HTMLDivElem
 export function notice(text: string, kind: "info" | "warn" | "ok" = "info"): HTMLDivElement {
   return h("div", { class: `notice ${kind}` }, text);
 }
+
+// ---------------------------------------------------------------- 快捷键录制
+
+/** 键盘事件的 `code` → Tauri 快捷键语法里的键名。认不出来的返回 `null`。 */
+function codeToKey(code: string): string | null {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+  const named: Record<string, string> = {
+    Comma: "Comma", Period: "Period", Slash: "Slash", Semicolon: "Semicolon",
+    Quote: "Quote", BracketLeft: "BracketLeft", BracketRight: "BracketRight",
+    Backslash: "Backslash", Minus: "Minus", Equal: "Equal", Backquote: "Backquote",
+    Space: "Space", Enter: "Enter", Tab: "Tab", Backspace: "Backspace",
+    ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
+    Home: "Home", End: "End", PageUp: "PageUp", PageDown: "PageDown",
+    Insert: "Insert", Delete: "Delete",
+  };
+  return named[code] ?? null;
+}
+
+/** mac 上把修饰键写成符号，跟系统里到处都是的写法一致 */
+const MAC_GLYPH: Record<string, string> = {
+  Control: "⌃", Alt: "⌥", Shift: "⇧", Super: "⌘", Command: "⌘", CommandOrControl: "⌘",
+};
+
+/** 键名 → 给人看的写法。没列到的原样显示。 */
+const KEY_LABEL: Record<string, string> = {
+  Comma: ",", Period: ".", Slash: "/", Semicolon: ";", Quote: "'",
+  BracketLeft: "[", BracketRight: "]", Backslash: "\\", Minus: "-",
+  Equal: "=", Backquote: "`", Space: "空格", Enter: "↩", Tab: "⇥",
+  Up: "↑", Down: "↓", Left: "←", Right: "→",
+};
+
+/** 把 Tauri 的快捷键串排成给人看的样子 */
+export function formatShortcut(s: string, isMac: boolean): string {
+  const parts = s.split("+").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return "";
+  const out = parts.map((p) => (isMac && MAC_GLYPH[p]) || KEY_LABEL[p] || p);
+  // mac 上修饰键符号是连着写的（⌥⇧T），另两家用加号
+  return isMac ? out.join("") : out.join("+");
+}
+
+/**
+ * 快捷键录制行。
+ *
+ * 点一下进入录制，按下组合就提交。要求**至少一个修饰键** —— 全局快捷键是系统级独占的，
+ * 允许用户把单个字母注册成全局键，等于让他一按那个字母全世界都收不到。
+ *
+ * `onCommit` 抛错表示没设成（组合被占、写法不合法），行会把自己恢复成原值。
+ */
+export function hotkeyRow(
+  title: string,
+  subtitle: string | undefined,
+  value: string,
+  isMac: boolean,
+  onCommit: (value: string) => Promise<void>,
+): HTMLDivElement {
+  const btn = h("button", { class: "hotkey", type: "button" });
+  const reset = h("button", { class: "linklike", type: "button", title: "恢复内置默认" }, "默认");
+
+  let current = value;
+  let recording = false;
+
+  const paint = () => {
+    btn.textContent = recording ? "按下新的组合…" : formatShortcut(current, isMac);
+    btn.classList.toggle("recording", recording);
+  };
+
+  const stop = () => {
+    recording = false;
+    paint();
+  };
+
+  const commit = async (next: string) => {
+    const before = current;
+    current = next;
+    stop();
+    try {
+      await onCommit(next);
+    } catch {
+      // 没设成就退回去。错误文案由调用方在状态栏里说，这里只负责别显示成已生效
+      current = before;
+      paint();
+    }
+  };
+
+  btn.addEventListener("click", () => {
+    recording = !recording;
+    paint();
+    if (recording) btn.focus();
+  });
+
+  btn.addEventListener("keydown", (e) => {
+    if (!recording) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.key === "Escape") return stop();
+
+    const mods: string[] = [];
+    if (e.ctrlKey) mods.push("Control");
+    if (e.altKey) mods.push("Alt");
+    if (e.shiftKey) mods.push("Shift");
+    if (e.metaKey) mods.push("Super");
+
+    const key = codeToKey(e.code);
+    // 只按了修饰键还在等真正的按键，不是错误，继续录
+    if (!key) return;
+    if (mods.length === 0) {
+      btn.textContent = "至少要带一个修饰键";
+      return;
+    }
+    void commit([...mods, key].join("+"));
+  });
+
+  btn.addEventListener("blur", stop);
+
+  reset.addEventListener("click", () => void commit(""));
+
+  paint();
+  const [row, tail] = rowShell(title, subtitle);
+  tail.append(reset, btn);
+  return row;
+}
