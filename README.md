@@ -1,6 +1,8 @@
 # selectionTranslation
 
-niri / Wayland 下的全局划词翻译。**选中任意界面里的文字，按 `Mod+Shift+T`，右上角浮出译文。**
+Linux / macOS / Windows 上的全局划词翻译。**选中任意界面里的文字，按一下快捷键，屏幕右上角浮出译文。**
+
+> 起家于 niri / Wayland，现在三个平台都能用。各平台的快捷键和安装方式见下。
 
 不想选中也行：点托盘图标打开输入框，手敲或粘贴。
 
@@ -13,8 +15,10 @@ niri / Wayland 下的全局划词翻译。**选中任意界面里的文字，按
 
 ## 快速开始
 
+### Linux（Arch / niri）
+
 ```bash
-# 1. 装依赖（Arch）
+# 1. 装依赖
 pac rust gtk4 libadwaita wl-clipboard ydotool
 systemctl --user enable --now ydotool
 
@@ -26,25 +30,52 @@ cd selectionTranslation
 
 `install.sh` 会编译、装二进制和图标、写 niri 快捷键与窗口规则（**改 `config.kdl` 前先备份**）、开机自启并拉起托盘。加 `--no-niri` 不碰 niri 配置，加 `--no-autostart` 不设自启，`--uninstall` 卸载。
 
-**3. 配一个模型**：按 `Mod+Alt+T` → 「供应商」页 → 点 **+** → 选预设（base_url 自动填好）→ 填 API key → 「拉取列表」挑模型 → 「测试连接」确认通了。
+### macOS
 
-**4. 用起来**：选中任意文字，按 `Mod+Shift+T`。
+从 [Releases](https://github.com/haibara-brownie/selectionTranslation/releases) 下 `.dmg`，拖进「应用程序」。
 
----
+首次打开会说「无法打开，因为无法验证开发者」——安装包没有签名（见[下面](#mac--windows-上的注意事项)）。右键点图标 →「打开」即可。
+
+**然后必须授权辅助功能**：系统设置 → 隐私与安全性 → 辅助功能 → 勾上 seltrans。取词要靠它，不授权按快捷键不会有任何反应。第一次按快捷键时系统也会主动弹这个请求。
+
+> **升级之后要重新勾一次。** 未签名的应用每次构建出来的签名摘要都不一样，系统会认为「这不是之前授权过的那个应用」。不是程序坏了。
+
+### Windows
+
+从 [Releases](https://github.com/haibara-brownie/selectionTranslation/releases) 下 `.msi` 或 `-setup.exe`。SmartScreen 会拦一次，点「更多信息」→「仍要运行」。
+
+不需要额外授权。
+
+### 配一个模型（三个平台一样）
+
+按打开设置的快捷键（见下表）→「供应商」页 → 点 **+** → 选预设（base_url 自动填好）→ 填 API key → 「拉取列表」挑模型 → 「测试连接」确认通了。
+
+然后选中任意文字，按翻译快捷键。
 
 ## 怎么用
 
 ### 快捷键
 
+**全局快捷键**（在任何应用里都生效）：
+
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| 翻译选中的文字 | `Mod+Shift+T` | `⌥⇧T` | `Alt+Shift+T` |
+| 打开配置界面 | `Mod+Alt+T` | `⌥⇧,` | `Alt+Shift+,` |
+
+mac / Windows 上这两个键**可以在设置页的「快捷键」里改**：点一下当前值进入录制，按下新组合即生效；被别的程序占了会当场告诉你。点「默认」恢复。
+
+Linux 上改不了——Wayland 没有全局快捷键协议，键是 niri 拦的，改键请编辑 `~/.config/niri/selectiontranslation.kdl`。
+
+> 为什么 mac / Windows 的默认值不跟 Linux 一致：全局快捷键是**系统级独占**的，注册之后所有应用里的这个组合都归 seltrans。而 `⌘⇧T` / `Ctrl+Shift+T` 恰好是所有浏览器的「重新打开关闭的标签页」，占掉它不划算。
+
+**弹窗里的按键**（三个平台一样）：
+
 | 按键 | 作用 |
 |---|---|
-| `Mod+Shift+T` | 翻译当前选中的文字 |
-| `Mod+Alt+T` | 打开配置界面 |
 | `Esc` | 收起弹窗 |
-| `Ctrl+Enter` / `F5` | 在弹窗里翻译（输入框里回车是换行） |
+| `Ctrl+Enter` / `F5` | 重新翻译（输入框里回车是换行） |
 | `Ctrl+Shift+C` | 复制译文 |
-
-改键编辑 `~/.config/niri/selectiontranslation.kdl`。
 
 ### 弹窗
 
@@ -106,7 +137,15 @@ seltrans-tauri tray
 
 ## 配置
 
-配置存在 `~/.config/seltrans/config.json`，权限 `0600`（里面有 API key）。
+配置文件的位置按各平台的规矩来（不确定的话，「关于」页和 `seltrans --help` 都会打印实际路径）：
+
+| 平台 | 位置 |
+|---|---|
+| Linux | `~/.config/seltrans/config.json` |
+| macOS | `~/Library/Application Support/seltrans/config.json` |
+| Windows | `%APPDATA%\seltrans\config.json` |
+
+Unix 上权限是 `0600`（里面有 API key）。
 
 ### 供应商与模型
 
@@ -185,16 +224,19 @@ seltrans-tauri tray
 
 ## 排查
 
-配置界面「关于」页有依赖自检，会告诉你 wl-clipboard、ydotool 服务、niri 规则各自的状态。
+配置界面「关于」页有依赖自检，按平台给出各自要检查的东西：Linux 看 wl-clipboard / ydotool 服务 / niri 规则，macOS 看辅助功能授权，Windows 看 UI Automation 与剪贴板访问。
 
 | 症状 | 怎么办 |
 |---|---|
 | 模型回「请提供需要翻译的内容」 | 发出去的用户消息是空的。先看弹窗里「原文」卡片的字数，再看日志里「发起翻译」那行的 `user 字符数`。多半是取到了空行或一串零宽字符 |
-| 取不到词 | 确认按快捷键前文字确实选中着；某些 Electron / Java 应用不提供主选区，把取词方式改成「自动」或「仅模拟 Ctrl+C」 |
-| 模拟 Ctrl+C 无效 | `systemctl --user status ydotool` 看服务在不在 |
-| 键盘像卡住了 | 修饰键被卡在按下状态，执行 `ydotool key 29:0 97:0 42:0 54:0 56:0 100:0 125:0 126:0` |
-| 快捷键没反应 | `niri validate` 看配置过没过；确认 `~/.local/bin` 在 PATH 里 |
-| 托盘没图标 | `seltrans tray` 手动跑一下看报什么；面板需要提供 `org.kde.StatusNotifierWatcher` |
+| 取不到词 | 确认按快捷键前文字确实选中着；某些应用不提供零副作用那条路（Electron 在 mac 上、老式控件在 Windows 上），把取词方式改成「自动」让它走模拟复制 |
+| **mac**：按快捷键完全没反应 | 多半是辅助功能授权没了。系统设置 → 隐私与安全性 → 辅助功能，把 seltrans 取消勾选再重新勾上。**每次升级都要重来一遍**，见下 |
+| **mac**：授权勾了还是不行 | 授权是进程启动时读的。勾完要退出 seltrans 再启动一次 |
+| **mac / Windows**：快捷键没反应但程序在跑 | 组合被别的程序占了。看日志里「注册全局快捷键失败」，去设置页的「快捷键」换一组 |
+| **Linux**：模拟 Ctrl+C 无效 | `systemctl --user status ydotool` 看服务在不在 |
+| **Linux**：键盘像卡住了 | 修饰键被卡在按下状态，执行 `ydotool key 29:0 97:0 42:0 54:0 56:0 100:0 125:0 126:0` |
+| **Linux**：快捷键没反应 | `niri validate` 看配置过没过；确认 `~/.local/bin` 在 PATH 里 |
+| **Linux**：托盘没图标 | `seltrans tray` 手动跑一下看报什么；面板需要提供 `org.kde.StatusNotifierWatcher` |
 | HTTP 401 / 404 | 弹窗里会直接显示服务端返回的原文，多半是 key 错了或 base_url 少了 `/v1` |
 
 ### 日志
@@ -219,16 +261,31 @@ seltrans-tauri tray
 ## 原理与取舍
 
 <details>
-<summary>Wayland 下怎么取词</summary>
+<summary>三个平台各自怎么取词</summary>
 
-没有 X11 那样的全局取词 API，所以分两条路：
+没有哪个系统提供「读取任意应用当前选中文本」的通用接口，所以每家都是**首选一条零副作用的路，读不到再模拟复制兜底**：
 
-1. **主选区**（`wl-paste --primary`）—— 选中就生效，零侵入，不碰剪贴板。绝大多数 GTK / Qt / 终端应用都支持。
-2. **模拟 Ctrl+C**（ydotool）—— 主选区拿不到时的兜底。会先存下当前剪贴板，复制、读取，然后**还原回去**。
+| 平台 | 首选（不碰剪贴板） | 兜底 |
+|---|---|---|
+| Linux / Wayland | 主选区 `wl-paste --primary` | 模拟 `Ctrl+C`（ydotool） |
+| macOS | 辅助功能 API 读 `AXSelectedText` | 模拟 `⌘C` |
+| Windows | UI Automation 的 `TextPattern` | 先 `Ctrl+Insert` 再 `Ctrl+C` |
 
-第 2 条有个坑：快捷键是 `Mod+Shift+T`，程序跑起来那一刻你手还按着 Super+Shift，这时直接发 Ctrl+C，应用收到的是 `Super+Shift+Ctrl+C` —— 既复制不到，还可能让合成器的修饰键状态和物理按键脱节，**表现就是键盘像卡住了**。所以发 Ctrl+C 前会先把左右 Ctrl / Shift / Alt / Super 全部显式抬起并等 120 ms，且用 RAII 守卫保证提前返回 / panic / 出错时一定再抬一次。
+几个值得说的细节：
 
-取词方式可以在设置里锁死成其中一种，默认「自动」。
+- **Windows 上先发 `Ctrl+Insert`**：传统控制台（cmd / PowerShell 的 conhost）里 `Ctrl+C` 是中断信号而不是复制，会打断正在跑的命令；`Ctrl+Insert` 在那里才是复制。
+- **Windows 的 UIA 要沿祖先链往上找**：Chromium / Edge / Electron 里拿到焦点的是一个带 `tabindex` 的容器，选区其实由祖先的 Document 元素持有。只问焦点元素的话，浏览器和 Electron 会全部掉进兜底。
+- **macOS 上 Electron 应用读不到 `AXSelectedText`**（VS Code / Slack 都是），只能靠 `⌘C` 兜底——这不是 bug，是那些应用的辅助功能树里就没暴露。
+
+兜底路径**读完都会把剪贴板还原**（只还原纯文本）。取词方式可以在设置里锁死成其中一种，默认「自动」。
+
+</details>
+
+<details>
+<summary>模拟复制那条兜底路径的坑</summary>
+
+模拟复制这条路有个坑（三个平台都有，只是键不同）：快捷键是 `Mod+Shift+T`，程序跑起来那一刻你手还按着 Super+Shift，这时直接发 Ctrl+C，应用收到的是 `Super+Shift+Ctrl+C` —— 既复制不到，还可能让合成器的修饰键状态和物理按键脱节，**表现就是键盘像卡住了**。所以发 Ctrl+C 前会先把左右 Ctrl / Shift / Alt / Super 全部显式抬起并等 120 ms，且用 RAII 守卫保证提前返回 / panic / 出错时一定再抬一次。
+
 </details>
 
 <details>
@@ -350,11 +407,9 @@ pnpm install && pnpm tauri dev           # 跑 Tauri 版（会同时起 vite）
   app-id + 标题匹配，见 `data/niri-snippet.kdl`。
 - **Linux 托盘用 ksni 而不是 Tauri 内置那套**。内置的依赖 libayatana-appindicator，
   且有已知问题（Wayland 下 .deb 和 dev 模式图标不显示，只有 AppImage 正常）。
-- **mac / Windows 的取词没有真机验证过**。代码写完了、类型检查过了，但模拟按键、
-  辅助功能授权、剪贴板还原这些必须实机试。首次使用请留意
-  `docs/发版.md` 里列出的待验证项。
-- mac 的托盘图标不是模板图标（现有图标是彩色的，切成单色会变成两坨黑块），
-  需要另配一张单色图。
+- **Windows 的取词还没有真机验证过**。UI Automation 那条路已经写完并做了类型检查
+  （在 mac 上交叉编译到 Windows 目标），但运行时行为必须实机试。mac 已经真机验过：
+  原生应用走辅助功能 API、Electron 掉模拟复制兜底、剪贴板还原都正确。
 
 ### mac / Windows 上的注意事项
 
@@ -369,13 +424,25 @@ pnpm install && pnpm tauri dev           # 跑 Tauri 版（会同时起 vite）
 
 | 平台 | 限制 |
 |---|---|
-| macOS | 需要「辅助功能」授权（系统设置 → 隐私与安全性 → 辅助功能）。从终端跑裸二进制时被授权的是终端，装成 .app 后要重新勾一次 |
+| macOS | 需要「辅助功能」授权（系统设置 → 隐私与安全性 → 辅助功能）。**升级之后要重新勾一次** —— 未签名应用每次构建的签名摘要都不一样，系统认不出是同一个应用 |
+| macOS | 从终端跑裸二进制时，被授权的其实是终端；装成 .app 之后要重新勾 |
 | Windows | **UIPI 挡住提权窗口** —— 目标程序以管理员身份运行时取不到词，这是系统安全设计，只能让 seltrans 也以管理员身份运行 |
-| Windows | 传统控制台（cmd / PowerShell 的 conhost）里 Ctrl+C 是中断信号不是复制，那类窗口取不到词。Windows Terminal 没这个问题 |
+| Windows | 用 Raw Input / DirectInput 读键盘的程序（多数游戏）会无视注入的按键 |
 
 **剪贴板只还原纯文本。** 走模拟复制那条兜底路径时会临时改写剪贴板再还原，但原本
 是图片、富文本、文件列表的话还不回去（会变成空）。三个平台都是这样，是已知取舍。
-不想冒这个险就把取词方式设成「仅主选区」（只有 Linux 有）。
+
+不想冒这个险，就把「取词方式」设成**「仅主选区」**——那一档在三个平台上都表示
+「只走零副作用的那条路，读不到就明确报错，绝不动剪贴板」：
+
+| 平台 | 零副作用的那条路 |
+|---|---|
+| Linux | 主选区（`wl-paste --primary`） |
+| macOS | 辅助功能 API（`AXSelectedText`） |
+| Windows | UI Automation（`TextPattern`） |
+
+代价是覆盖面小一些：Electron 应用（VS Code / Slack）在 mac 上读不到，老式 Win32 控件
+在 Windows 上读不到，那些场景只能靠模拟复制。
 
 ## 许可
 
