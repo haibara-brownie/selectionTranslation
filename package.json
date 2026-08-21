@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "test": "node --test ui/settings/platform-copy.test.mjs",
+    "build": "pnpm test && tsc --noEmit && vite build",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -18,28 +18,17 @@ import {
   switchRow,
 } from "../lib/dom";
 import type { Ctx } from "../lib/shell";
+import {
+  settingsPlatformCopy,
+  type SelectionMode,
+  type SettingsPlatformCopy,
+} from "./platform-copy";
 
 /** 目标语言下拉里「自定义…」那一项的哨兵值。真实语言名不会长这样，不怕撞。 */
 const CUSTOM_LANG = "__custom__";
 
 /** 取词方式三档。值必须和 Rust 侧 `selection_mode` 认的字符串一致。 */
-const SEL_MODES: [value: string, label: string, note: string][] = [
-  [
-    "auto",
-    "自动（推荐）",
-    "先读主选区（划完词就有，零侵入）；读不到再模拟 Ctrl+C，读完把剪贴板原样还回去。",
-  ],
-  [
-    "primary",
-    "仅主选区",
-    "只读主选区，绝不碰剪贴板。代价是少数应用（部分 Electron 应用、某些终端）压根不写主选区，这时取不到词。",
-  ],
-  [
-    "clipboard",
-    "仅模拟 Ctrl+C",
-    "始终走模拟按键，兼容性最好。会临时改写剪贴板再还原，剪贴板管理器里可能多出一条历史。",
-  ],
-];
+const SELECTION_MODES: SelectionMode[] = ["auto", "primary", "clipboard"];
 
 // 跟 GTK 版的 SpinRow 范围保持一致。收窄下限会让原本设得下的尺寸突然变非法，
 // 用户升级后打开设置页就会看到一条报错，而他什么都没改。
@@ -87,12 +76,13 @@ export async function render(pane: HTMLElement, ctx: Ctx): Promise<void> {
   // 平台在外壳启动时取过一次放进 ctx —— 不走 api.about()，那个会顺带做依赖自检
   // 和 stat 日志文件，为了一个字符串付这个成本不划算
   const isLinux = ctx.os === "linux";
+  const platformCopy = settingsPlatformCopy(ctx.os);
 
   pane.append(
     buildTranslate(ctx, langs),
-    ...buildSelection(ctx, isLinux),
+    buildSelection(ctx, platformCopy),
     ...buildAppearance(ctx, themes, fonts),
-    ...buildPopup(ctx),
+    ...buildPopup(ctx, platformCopy),
     await buildAutostart(ctx),
     ...(await buildShortcuts(isLinux, ctx)),
   );
@@ -160,17 +150,15 @@ function buildTranslate(ctx: Ctx, langs: [string, string][]): HTMLElement {
 
 // ---------------------------------------------------------------- 取词
 
-function buildSelection(ctx: Ctx, isLinux: boolean): HTMLElement[] {
-  const g = group(
-    "取词",
-    "Wayland 没有统一的划词接口，只能在「主选区」和「模拟 Ctrl+C」之间权衡。",
-  );
+function buildSelection(ctx: Ctx, copy: SettingsPlatformCopy): HTMLElement {
+  const g = group("取词", copy.selectionIntro);
 
-  const noteOf = (v: string) => SEL_MODES.find(([value]) => value === v)?.[2] ?? "";
-  const opts: [string, string][] = SEL_MODES.map(([value, label]) => [
+  const modeOf = (v: string) =>
+    SELECTION_MODES.includes(v as SelectionMode) ? copy.selectionModes[v as SelectionMode] : null;
+  const noteOf = (v: string) => modeOf(v)?.note ?? "";
+  const opts: [string, string][] = SELECTION_MODES.map((value) => [
     value,
-    // 主选区是 X11 / Wayland 独有的概念，别的平台连这个选项都不该能选
-    value === "primary" && !isLinux ? `${label}（本平台不支持）` : label,
+    copy.selectionModes[value].label,
   ]);
 
   const row = comboRow("取词方式", noteOf(ctx.config.selectionMode), opts, ctx.config.selectionMode, (v) => {
@@ -180,18 +168,8 @@ function buildSelection(ctx: Ctx, isLinux: boolean): HTMLElement[] {
     setSub(row, noteOf(v));
   });
 
-  if (!isLinux) {
-    const primary = row.querySelector<HTMLOptionElement>('option[value="primary"]');
-    if (primary) primary.disabled = true;
-  }
   addRow(g, row);
-
-  const out: HTMLElement[] = [g];
-  if (!isLinux && ctx.config.selectionMode === "primary") {
-    // 配置是从 Linux 机器同步过来时才可能出现这种组合，提醒一下不然会「按了没反应」
-    out.push(notice("当前配置是「仅主选区」，但这个平台没有主选区，取词会一直失败。请改成「自动」或「仅模拟 Ctrl+C」。", "warn"));
-  }
-  return out;
+  return g;
 }
 
 // ---------------------------------------------------------------- 外观
@@ -289,7 +267,7 @@ function buildAppearance(ctx: Ctx, themes: [string, string][], fonts: string[]):
 
 // ---------------------------------------------------------------- 弹窗
 
-function buildPopup(ctx: Ctx): HTMLElement[] {
+function buildPopup(ctx: Ctx, copy: SettingsPlatformCopy): HTMLElement[] {
   const g = group("弹窗", "译文窗口的默认大小。");
 
   const sizeRow = (
@@ -333,10 +311,7 @@ function buildPopup(ctx: Ctx): HTMLElement[] {
     ),
   );
 
-  return [
-    g,
-    notice("Wayland 下窗口位置由合成器决定，应用自己摆不了。想让弹窗固定出现在某处，改 ~/.config/niri/selectiontranslation.kdl 里的窗口规则。"),
-  ];
+  return copy.popupNotice ? [g, notice(copy.popupNotice)] : [g];
 }
 
 // ---------------------------------------------------------------- 后台常驻

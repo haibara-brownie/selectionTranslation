@@ -414,8 +414,8 @@ pnpm tauri build --no-bundle             # 出一个能独立跑的 Tauri 二进
 | P0 | 抽出 `seltrans-core`，核心逻辑与 GUI 解耦 | 完成 |
 | P1 | Tauri 骨架 + 翻译弹窗 | 完成 |
 | P2 | 设置界面四页搬到 Tauri | 完成 |
-| P3 | mac / Windows 取词、托盘、自启、单实例 | 代码完成，**mac/Win 未经真机验证** |
-| P4 | 三平台打包 CI | 配置完成，**未跑过一次真实 CI** |
+| P3 | mac / Windows 取词、托盘、自启、单实例 | 完成，mac / Windows 均已真机验证 |
+| P4 | 三平台打包 CI | 完成，v0.3.0 三平台发版任务通过 |
 | P5 | 删掉 GTK 版 | **未做**，等 Tauri 版在日常使用中站住脚 |
 
 两套界面目前并存：`seltrans`（GTK4，日常在用）和 `seltrans-tauri`（迁移中）。
@@ -431,9 +431,9 @@ pnpm tauri build --no-bundle             # 出一个能独立跑的 Tauri 二进
   app-id + 标题匹配，见 `data/niri-snippet.kdl`。
 - **Linux 托盘用 ksni 而不是 Tauri 内置那套**。内置的依赖 libayatana-appindicator，
   且有已知问题（Wayland 下 .deb 和 dev 模式图标不显示，只有 AppImage 正常）。
-- **Windows 的取词还没有真机验证过**。UI Automation 那条路已经写完并做了类型检查
-  （在 mac 上交叉编译到 Windows 目标），但运行时行为必须实机试。mac 已经真机验过：
-  原生应用走辅助功能 API、Electron 掉模拟复制兜底、剪贴板还原都正确。
+- **Windows 取词已经真机验证**：记事本、Chrome、Word 直接走 UI Automation；
+  VS Code 没暴露可用的 TextPattern 时会扫完祖先链，再降级到 `Ctrl+Insert`。
+  UIA 和模拟复制两条路线都验证了原文准确，纯文本剪贴板能正确还原。
 
 ### mac / Windows 上的注意事项
 

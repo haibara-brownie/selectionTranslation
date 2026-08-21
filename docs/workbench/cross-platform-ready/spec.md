@@ -1,6 +1,6 @@
 # 规格：三平台可用（cross-platform-ready）
 
-- 状态：进行中
+- 状态：完成
 - 定级：重度
 - 起草：2026-08-20（Mac 工作站）
 
@@ -73,12 +73,9 @@ seltrans 现在**只在 niri/Wayland 上真正跑通**。mac 和 Windows 的代�
 
 起草时列的两条（取词双跑、快捷键写死）都已解决，见 `tickets/T-01.md`、`tickets/T-07.md`。
 
-当前唯一未决的是 **T-12：Linux 回归**。本轮改的三平台共用代码在 Linux 上一次都没跑过，
-其中三条修复在 Linux 上影响更大（取词双跑、首次触发空弹窗、关设置窗口退出程序），
-因为合成器每次按键都 spawn 新进程，那正是这几条的触发路径。
-
-Windows 的运行时也未验证（T-06 只做到类型检查），但那不阻塞本 feature 的交付 ——
-验收标准里 Windows 本来就只要求「代码正确 + CI 绿」。
+起草时列的运行时未决项已经全部关闭：T-12 完成 Linux 回归，Windows 也在真机上验证了
+安装、设置页、全局快捷键、UI Automation、祖先扫描后的模拟复制兜底和剪贴板还原。
+具体结果见 `tickets/T-06.md` 与 `delivery.md`。
 
 ## 六点五、两台机器的差异（接续开发前先看这个）
 
@@ -107,6 +104,5 @@ Windows 的运行时也未验证（T-06 只做到类型检查），但那不阻�
 - **ad-hoc 签名的 app 每次升级都要重勾辅助功能**。cdhash 变了 TCC 就不认。
   签名+公证才能根治。
 - Tauri 启动期的 panic 没法单测覆盖，只能靠各平台真机启动。
-- **Windows 的运行时行为完全未验证**。类型检查有办法做（在 `/tmp` 搭一次性壳子只拉进
-  `selection/windows.rs`，绕开 `aws-lc-sys` 的 C 工具链依赖，手法记在 T-06），
-  但跑起来必须真机。
+- Windows 的 UIA 会受 UIPI 限制，无法读取权限级别更高的目标程序；Raw Input / DirectInput
+  程序也可能忽略模拟按键。这是 Windows 的安全与输入模型限制，处置方式见 README。

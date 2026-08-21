@@ -19,6 +19,12 @@ import { render as renderAbout } from "./settings/about";
 
 type PageId = "general" | "providers" | "prompts" | "about";
 
+declare global {
+  interface Window {
+    __SELTRANS_SETTINGS_PAGE__?: string;
+  }
+}
+
 const PAGES: Record<PageId, (pane: HTMLElement, ctx: Ctx) => void | Promise<void>> = {
   general: renderGeneral,
   providers: renderProviders,
@@ -82,8 +88,9 @@ async function boot() {
     .matchMedia("(prefers-color-scheme: dark)")
     .addEventListener("change", () => void ctx.refreshTheme());
 
-  // 命令行 `settings 供应商` 可以直接跳到某一页
-  const want = new URLSearchParams(location.search).get("page") ?? "";
+  // 命令行 `settings providers` 可以直接跳到某一页。不能走 URL 查询参数：
+  // `WebviewUrl::App` 是打包资源文件路径，Windows 会把 `?` 当非法文件名字符而白屏。
+  const want = window.__SELTRANS_SETTINGS_PAGE__ ?? "";
   await show(isPageId(want) ? want : "general");
 
   // 新手引导的第 3～6 步在这个窗口里（加供应商、填 key、拉模型、测连接）。

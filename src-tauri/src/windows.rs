@@ -20,6 +20,18 @@ pub const SETTINGS: &str = "settings";
 /// 那会儿它还没挂上监听器，发了也收不到。
 pub const EVENT_TRANSLATE: &str = "seltrans://translate";
 
+const SETTINGS_PAGES: [&str; 4] = ["general", "providers", "prompts", "about"];
+
+fn settings_page_script(page: Option<&str>) -> String {
+    let page = page
+        .filter(|p| SETTINGS_PAGES.contains(p))
+        .unwrap_or("general");
+    format!(
+        "window.__SELTRANS_SETTINGS_PAGE__ = {};",
+        serde_json::to_string(page).expect("设置页标识一定能序列化")
+    )
+}
+
 #[derive(Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranslateRequest {
@@ -277,17 +289,19 @@ pub fn open_settings<R: Runtime>(
         return Ok(win);
     }
 
-    let mut url = "settings.html".to_string();
-    if let Some(p) = page {
-        url.push_str(&format!("?page={p}"));
-    }
+    // `WebviewUrl::App` 收的是打包资源的**文件路径**，不是一条随便拼的 URL。
+    // Windows 文件名不允许 `?`，把 `?page=providers` 拼进去会让 WebView2 找不到
+    // `settings.html`，最后只剩一个永久纯白的原生窗口。目标标签页改由初始化数据传给
+    // 前端，资源路径在三个平台上始终都是同一个合法文件名。
+    let page_script = settings_page_script(page);
     // 设置页跟弹窗用同一套打扮，否则 mac 上一个圆角一个方角，看着像两个程序
     let win = decorate(
-        WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App(url.into()))
+        WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App("settings.html".into()))
             .title("划词翻译 · 设置")
             .inner_size(900.0, 700.0)
             .min_inner_size(640.0, 480.0),
     )
+    .initialization_script(page_script)
     .build()?;
 
     #[cfg(target_os = "macos")]
@@ -371,5 +385,29 @@ mod tests {
 
         let stored = handle.state::<Launch>().0.lock().unwrap().clone();
         assert_eq!(stored.text.as_deref(), Some("第二轮"));
+    }
+
+    /// Windows 的打包资源解析会把 `WebviewUrl::App` 当文件路径处理，`?` 不是合法的
+    /// 文件名字符。目标标签页必须走窗口初始化数据，不能拼进静态资源路径。
+    #[test]
+    fn 指定设置标签页不会污染打包资源路径() {
+        let app = app();
+        let win = open_settings(app.handle(), Some("providers")).expect("开设置页失败");
+        let url = win.url().expect("读取设置页 URL 失败");
+
+        assert_eq!(url.path(), "/settings.html");
+        assert_eq!(url.query(), None);
+    }
+
+    #[test]
+    fn 设置标签页通过初始化数据传给前端() {
+        assert_eq!(
+            settings_page_script(Some("providers")),
+            "window.__SELTRANS_SETTINGS_PAGE__ = \"providers\";"
+        );
+        assert_eq!(
+            settings_page_script(Some("not-a-page")),
+            "window.__SELTRANS_SETTINGS_PAGE__ = \"general\";"
+        );
     }
 }

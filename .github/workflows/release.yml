@@ -92,9 +92,9 @@ jobs:
 
           ## 已知限制
 
-          - 全局快捷键目前是写死的：macOS / Windows 上是 `Alt+Shift+T` 翻译、
-            `Alt+Shift+,` 打开设置；被别的程序占用了暂时改不了（设置界面还没有改键入口）。
-            Linux 上快捷键由合成器触发（Wayland 没有全局快捷键协议），改键编辑
+          - macOS / Windows 默认用 `Alt+Shift+T` 翻译、`Alt+Shift+,` 打开设置，
+            可以在设置页改键；注册失败通常是组合被别的程序占用，换一组即可。
+            Linux 的快捷键由合成器触发（Wayland 没有全局快捷键协议），改键编辑
             `~/.config/niri/selectiontranslation.kdl`，配置方法见 README。
           - macOS 升级后需要重新授权辅助功能，原因见上。
           - 兜底取词只还原纯文本剪贴板，富文本和图片还不回去。

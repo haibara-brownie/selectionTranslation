@@ -374,3 +374,33 @@ T-06（Windows UIA 取词）是波次 1 最后一张，也是**本机完全验�
 - [21:01] 回归 7 | 托盘图标放大 8 倍看：深色圆角方块 + 薄荷绿选区条 + 深色箭头镂空，箭头清晰可辨。（一开始没认出来，是用户提醒「图标变了而已」） | 第 8、9 条
 - [21:19] 回归 8、9 | 快捷键分组是只读列表无录制按钮；依赖自检四项全绿 + 绿色汇总条 | 收尾
 - [21:22] 收尾 | T-12 status→done，九条结果与 Linux 侧验证手法写进票里。safekey.sh / shoot.sh 从不入库的 .scratch 挪进 docs/workbench/tools/（票是入库的，引用 .scratch 到了 Mac 上就是断的），配 README 说明理由 | 只剩 T-13
+- [2026-08-20] Windows 收尾 | 按 source-command-autopilot 读取交接/发版文档；项目未提供 AGENTS.md/项目适配块，先以文档中的 Windows 验收清单为准，准备核对 GitHub v0.3.0 草稿 Release 并在本机实测安装/运行 | 先确认 Release 产物与 Actions 状态
+- [2026-08-21] 定级与适配 | 任务按中度交付验证推进；确认仓库无 AGENTS.md/CLAUDE.local.md，改以 docs/发版.md、T-06 和 CI 定义为验收依据 | 检查 GitHub Release 与 Actions
+- [2026-08-21] Windows 验收准备 | 将验收落到安装器完整性、启动/单实例/托盘、首次引导、设置与快捷键、UIA/剪贴板兜底及剪贴板还原 | 开始 GitHub 与 Windows 真机操作
+- [2026-08-21] GitHub 发版核对 | v0.3.0 workflow run 32393582175 成功，Linux/macOS/Windows 三个矩阵 job 全绿；草稿 Release 有 9 个资产 | 下载 Windows 两种安装包
+- [2026-08-21] 安装包完整性 | MSI 5,402,624 bytes、NSIS 3,857,172 bytes，两个 SHA-256 均与 GitHub digest 完全一致 | 读取包元数据与签名状态
+- [2026-08-21] 包元数据 | 两个包均 NotSigned；NSIS x64、ProductVersion/FileVersion 0.3.0；MSI ProductName=seltrans、Manufacturer=brownie、ALLUSERS=1、UpgradeCode 稳定 | 需要用户确认后安装并运行新下载的 Windows 软件
+- [2026-08-21] 人工介入点 | 用户明确确认安装并运行，要求持续验证到结束并修复发现的问题 | 静默安装 NSIS 后核对落盘结果
+- [2026-08-21] Windows 安装首轮 RED | NSIS /S 返回 0 且写入 HKCU 卸载项，但 %LOCALAPPDATA%/seltrans 为空，预期的应用与 uninstall.exe 均不存在 | 用包内容/安全事件/路径定位排查，再交互复现
+- [2026-08-21] 安装排查结论 | 排除包漏载荷/Defender 隔离/路径错误；NSIS 父进程退出后仍有延迟落盘，最终 seltrans-tauri.exe 14,868,480 bytes 与 uninstall.exe 均存在 | 后续验收等待目标文件出现，继续启动验证
+- [2026-08-21] 启动前检查 | 已安装二进制 x64 0.3.0、NotSigned；--help 正确打印 Windows 配置/日志路径和可改快捷键说明 | 启动 tray，检查进程/日志/首次提示
+- [2026-08-21] Windows 基础启动 | tray 常驻、托盘注册、两枚全局快捷键注册成功；第二实例 popup --input 0 退出并由常驻实例打开主窗口，首次七步指引显示正常 | 从指引进入设置页
+- [2026-08-21] Windows 设置页 RED | “划词翻译 · 设置”窗口能创建但永久纯白，无 RootWebArea；主弹窗和 WebView2 Runtime 正常，阻断配置供应商/改键 | 检查设置窗口 URL 与前端启动异常，补回归测试后修复
+- [2026-08-21] 设置白屏根因 | 仅 settings providers/引导 page=providers 白屏，settings 无参数正常；WebviewUrl::App(PathBuf) 被拼入 ?page，Windows 将其当非法资源文件名，Linux/mac 未暴露 | 固定资源路径并用初始化数据传目标页
+- [2026-08-21] 设置修复 GREEN | 新增资源路径回归测试与平台文案测试；URL 固定 settings.html，前端读初始化页；Windows/mac 零副作用模式恢复可选并换成 UIA/辅助功能文案；前端测试 2/2、pnpm build 通过 | 本机无 Rust/MSVC，先验原 v0.3.0 其余 Windows 运行时
+- [2026-08-21] Windows UIA 首验 | 记事本选中固定 73 字符后 Alt+Shift+T 成功；日志为“UIA 命中：焦点元素直接持有选区”，剪贴板哨兵前后不变；首次指引完成并可收起弹窗，常驻进程存活 | 安装本机构建环境，重打修复包
+- [2026-08-21] 构建环境准备 | 用户授权安装需要的环境、打包、继续全量 Windows 验证并在全绿后提交；即将安装 Rust stable MSVC 与 VS 2022 C++ Build Tools/Windows SDK | 安装后跑 Rust/前端检查
+- [2026-08-21] 构建环境完成 | VS Build Tools 17.14.39 + VC x64/Windows SDK、rustup 1.29 + stable x86_64-pc-windows-msvc 已安装，系统无重启要求 | 先跑设置白屏与平台文案的最窄回归测试
+- [2026-08-21] 最窄回归 GREEN | Rust `指定设置标签页不会污染打包资源路径` 通过，前端 Windows/Linux 平台文案测试 2/2 通过 | 扩大到 fmt、clippy、workspace 测试与前端生产构建
+- [2026-08-21] 扩大检查第 1 轮 | 前端测试 2/2、pnpm build 通过；cargo fmt --check 仅报 settings_page_script 链式调用需换行 | 执行 rustfmt 后重验，再跑 clippy/workspace tests
+- [2026-08-21] 扩大检查 GREEN | rustfmt 通过；clippy core+Tauri all-targets -D warnings 通过；workspace 测试 32/32（core 28 + Tauri 4）通过；前端测试 2/2 与 pnpm build 通过 | 本机 tauri build 打 MSI/NSIS
+- [2026-08-21] 打包第 1 轮 | Tauri CLI 在 cargo metadata 前失败：桌面会话旧 PATH 未包含刚安装的 ~/.cargo/bin，未进入产品编译 | 给构建进程显式补 Cargo PATH 后重跑
+- [2026-08-21] Windows 打包 GREEN | `pnpm tauri build --bundles msi,nsis` 成功，release 编译 3m05s，产出 target/release/bundle/msi 与 nsis 两个 0.3.0 x64 安装包 | 校验本地包后覆盖安装修复版
+- [2026-08-21] 修复包覆盖安装 | NSIS /S 返回 0，安装 exe 14,895,616 bytes、0.3.0；与 target 二进制唯一差异为 bundler 将 UNKNOWN 标记写成 NSIS，符合 Tauri 打包行为 | 启动修复版复验 settings providers 与平台文案
+- [2026-08-21] 设置修复真机 GREEN | 修复包 `settings providers` 直接进入供应商页且非白屏；通用页显示 Windows UIA/Ctrl+Insert 文案，无 Wayland/niri；“仅 UI Automation”可选择落盘，已恢复自动；关设置后常驻进程仍在 | 重验 UIA 与模拟复制两条取词路线
+- [2026-08-21] Windows 取词真机 GREEN | 修复包记事本 auto 走 UIA 直取 73 字符且剪贴板不变；clipboard 模式日志确认 Ctrl+Insert 取到 73 字符且哨兵还原，已恢复 auto；Chrome example.com UIA 直取 101 字符且剪贴板不变 | 用 VS Code/Electron 尝试覆盖祖先链回退
+- [2026-08-21] Electron/Word 真机 GREEN | VS Code UIA 扫 10 层无选区后按设计降级 Ctrl+Insert，取到 87 字符且剪贴板还原；Word UIA 直取 75 字符且剪贴板不变；测试窗口均已关闭 | 对 MSI 做 administrative extraction 验证
+- [2026-08-21] MSI 验证 GREEN | administrative extraction 退出 0，完整解出 14,895,616 bytes 的 seltrans-tauri.exe 0.3.0 | 更新 README/规格/T-06/Release 文案并写 delivery.md
+- [2026-08-21] 文档收干 | README 与规格移除 Windows/CI 未验证说法；T-06 记录五类真机结果；release workflow 改为“mac/Win 可在设置改键”；delivery.md 汇总交付与限制 | 跑文案相关检查并自审 diff
+- [2026-08-21] 最终检查 | pnpm build（含平台文案 3/3）通过、cargo fmt 通过、diff check 通过、无 DEBUG 标记；此前 clippy/32 项 Rust 测试/Windows 双安装包构建均通过 | 自审后提交
+- [2026-08-21] 自审与国际化 | 资源路径有白名单与 JSON 转义，模式值保持后端协议，测试已接入 CI；无新发现；项目无适配块且未声明 I18N 流程，沿用现有中文直写 | 精确暂存本次文件并提交
