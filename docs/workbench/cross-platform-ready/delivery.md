@@ -3,9 +3,11 @@
 - 完成日期：2026-08-21
 - Windows 修复提交基线：`218db61`
 - 状态：Linux / macOS / Windows 真机验证完成
+- 正式发布：[v0.3.1](https://github.com/haibara-brownie/selectionTranslation/releases/tag/v0.3.1)
 
 ## Windows 收尾
 
+- GitHub v0.3.1 发版 workflow `32441716001` 三平台全绿，7 个公开资产核对通过。
 - GitHub v0.3.0 发版 workflow `32393582175` 成功，Windows MSI / NSIS 产物齐全。
 - 原 v0.3.0 包发现 `settings providers` 在 Windows 永久白屏：
   `WebviewUrl::App` 的打包资源 PathBuf 被拼入 `?page=providers`，Windows 将其当非法文件名。

@@ -407,3 +407,7 @@ T-06（Windows UIA 取词）是波次 1 最后一张，也是**本机完全验�
 - [2026-08-21] v0.3.1 发版准备 | 用户授权推送并正式发版；远端 main 未分叉、v0.3.1 tag 不存在，建立 codex/release-v0.3.1 | 对齐三处版本并由 Cargo 更新锁文件
 - [2026-08-21] v0.3.1 版本对齐 | Cargo/package/Tauri 配置与 Cargo.lock 均为 0.3.1，Windows core+Tauri build 通过 | 跑发布前 fmt/clippy/tests 与双安装包构建
 - [2026-08-21] v0.3.1 发布前检查 | fmt、clippy -D warnings、Rust 测试 32/32、前端 3/3 通过；MSI/NSIS 构建成功且两者 ProductVersion 均为 0.3.1 | 提交版本，快进 main 后推分支与 tag
+- [2026-08-21] v0.3.1 推送 | main 已推到 fb13eef，annotated tag v0.3.1 已新建并推送 | 监控发版 workflow，核对资产后发布草稿
+- [2026-08-21] v0.3.1 CI GREEN | GitHub run 32441716001 的 Release 草稿、Linux、macOS universal、Windows MSI/NSIS 四个 job 全部 success | 核对 7 个资产并下载 CI Windows 包验版本/摘要
+- [2026-08-21] v0.3.1 资产核对 | 草稿 7 个资产无缺漏；CI MSI/NSIS digest 与下载文件一致，ProductVersion 均为 0.3.1 | 写本版修复摘要并公开发布 Release 374145122
+- [2026-08-21] v0.3.1 发布完成 | Release 374145122 已公开为非预发布；匿名接口确认 7 个资产、修复摘要与 latest=v0.3.1 | 提交并推送最终交付记录
