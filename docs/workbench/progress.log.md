@@ -33,3 +33,5 @@
 - [2026-08-21 01:00] 修 bug | `--help` 写死印 `seltrans-tauri`，但包里装出来的命令叫 `seltrans`，用户照着复制会 command not found。改成取 argv[0]；对齐改成算出来的（exe 名长度会变，且 `<文本>` 全角占两列，chars().count() 会少算）| **在 tag 之后，不在 v0.3.0 二进制里**
 - [2026-08-21 09:30] 修 CI | **Rust 1.98.0（2026-08-18 发布）新增 `clippy::chunks_exact_to_as_chunks`**，`tray.rs` 四处中招，CI 的 Linux 与 macOS 两个 job 一起挂（Windows 绿，因为那四处都在 `cfg(any(linux, macos))` 里）。改用 `as_chunks::<4>()`，1.97/1.98 双工具链都验过 | 起因不是代码改动，是 CI 用浮动的 `stable`
 - [2026-08-21 09:50] CI | **工具链钉到 1.98.0**（新增仓库根 `rust-toolchain.toml`），三个 workflow 不再用浮动的 `dtolnay/rust-toolchain@stable`，改 `rustup toolchain install`（不带参数=读该文件）。发版的 target 按 matrix 单独 `rustup target add` | 升级约每季度一次，步骤写在 rust-toolchain.toml 里
+- [2026-08-21 10:10] 清理 | 删掉 v0.2.0 / v0.3.0 两个**草稿** Release（各 7 个产物），线上只留正式发布的 v0.3.1。**tag 全部保留**——`packaging/aur/.SRCINFO` 从 v0.3.0 的 tag tarball 取源码，所以没带 `--cleanup-tag` | AUR 仍指向 0.3.0，见下条
+- [2026-08-21 10:10] 待办 | **AUR 的 PKGBUILD 还停在 `pkgver=0.3.0`**，而线上最新是 v0.3.1（Windows 白屏修复在 0.3.1 里）。要更新得改 pkgver + 重算 sha256 + 重生成 .SRCINFO | 仍没 AUR 账号，只能改对不发布
