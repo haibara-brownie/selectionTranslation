@@ -612,7 +612,7 @@ mod imp {
         // 共享的光栅化给的是不预乘 RGBA；SNI 要的是大端 ARGB，重排一下
         // （GTK 版喂给面板的 GdkPixbuf 数据就是不预乘的，面板按那个来）
         let mut data = Vec::with_capacity(rgba.len());
-        for px in rgba.chunks_exact(4) {
+        for px in rgba.as_chunks::<4>().0 {
             data.extend_from_slice(&[px[3], px[0], px[1], px[2]]);
         }
         Some(Icon {
@@ -900,8 +900,13 @@ mod icon_tests {
     /// 有多少像素基本不透明 / 基本透明
     fn profile(rgba: &[u8]) -> (usize, usize, usize) {
         let total = rgba.len() / 4;
-        let opaque = rgba.chunks_exact(4).filter(|p| p[3] > 128).count();
-        let clear = rgba.chunks_exact(4).filter(|p| p[3] < 32).count();
+        let opaque = rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[3] > 128)
+            .count();
+        let clear = rgba.as_chunks::<4>().0.iter().filter(|p| p[3] < 32).count();
         (total, opaque, clear)
     }
 
@@ -942,7 +947,9 @@ mod icon_tests {
         // 深色底 + 薄荷色选区条 + 深色箭头：数"接近底色的暗像素"太脆，
         // 改数选区条那片亮像素 —— 箭头挖得越实，亮像素越少。给一个上下界。
         let mint = rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .filter(|p| p[3] > 128 && p[1] > 150 && p[0] < 180)
             .count();
         assert!(

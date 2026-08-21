@@ -31,3 +31,4 @@
 - [2026-08-21 01:00] 打包 | **AUR PKGBUILD 从 0.1.0/GTK 版更新到 0.3.0/Tauri 版**，从 tag tarball 完整构建验过（2m04s，6.1MB，包内七个文件都对），.SRCINFO 重生成。仍没 AUR 账号，只改对不发布 | —
 - [2026-08-21 01:00] 纠错 | 迁移期写在 PKGBUILD 里的切换清单有两条是错的：① **不需要 libayatana-appindicator**，Linux 托盘走 ksni（纯 D-Bus SNI），`readelf -d` 查 NEEDED 里根本没有；② **不需要为 pnpm 做离线依赖**，「AUR 构建环境不允许联网」这个前提就不成立（用户自己机器上 makepkg，makechrootpkg 也不隔离网络），照 Arch 的 Rust 惯例把联网放 prepare()、build() 用 --frozen 即可。原以为是最大的一块工作量，实际两行 | 已写进 packaging/aur/README.md
 - [2026-08-21 01:00] 修 bug | `--help` 写死印 `seltrans-tauri`，但包里装出来的命令叫 `seltrans`，用户照着复制会 command not found。改成取 argv[0]；对齐改成算出来的（exe 名长度会变，且 `<文本>` 全角占两列，chars().count() 会少算）| **在 tag 之后，不在 v0.3.0 二进制里**
+- [2026-08-21 09:30] 修 CI | **Rust 1.98.0（2026-08-18 发布）新增 `clippy::chunks_exact_to_as_chunks`**，`tray.rs` 四处中招，CI 的 Linux 与 macOS 两个 job 一起挂（Windows 绿，因为那四处都在 `cfg(any(linux, macos))` 里）。改用 `as_chunks::<4>()`，1.97/1.98 双工具链都验过 | 起因不是代码改动，是 CI 用浮动的 `stable`
