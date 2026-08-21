@@ -58,9 +58,17 @@ jobs:
             libxdo-dev \
             patchelf
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      # 版本和 components 都钉在仓库根的 rust-toolchain.toml 里，这里不重复写。
+      #
+      # 不用 `dtolnay/rust-toolchain@stable`：那是个浮动版本，Rust 一发新版就可能
+      # 让 CI 挂在跟改动无关的提交上（1.98.0 的新 clippy lint 就干过一次）。那个
+      # action 也不读 rust-toolchain.toml，硬用的话会装一个版本、再被 rustup 的
+      # shim 切到另一个版本，components 装在错的那个上。
+      #
+      # `rustup toolchain install` 不带参数 = 装「活动工具链」，也就是读
+      # rust-toolchain.toml。runner 镜像自带 rustup，不用另外装。
+      - name: 装工具链（版本见 rust-toolchain.toml）
+        run: rustup toolchain install --no-self-update
 
       - uses: Swatinem/rust-cache@v2.9.2
 
@@ -123,9 +131,9 @@ jobs:
             libgtk-4-dev \
             libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      # 同上，版本见 rust-toolchain.toml
+      - name: 装工具链（版本见 rust-toolchain.toml）
+        run: rustup toolchain install --no-self-update
 
       - uses: Swatinem/rust-cache@v2.9.2
         with:
@@ -165,9 +173,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      # 同上，版本见 rust-toolchain.toml
+      - name: 装工具链（版本见 rust-toolchain.toml）
+        run: rustup toolchain install --no-self-update
 
       - uses: Swatinem/rust-cache@v2.9.2
         with:

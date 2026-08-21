@@ -162,9 +162,20 @@ jobs:
             libxdo-dev \
             patchelf
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_targets }}
+      # 版本钉在仓库根的 rust-toolchain.toml，理由写在那个文件里。发版尤其不该踩
+      # 「工具链自己变了」这一脚：发版当天返工的代价比平时高得多。
+      #
+      # target 是按 matrix 走的（只有 mac 要装两个，为了打 universal 包），没法写进
+      # rust-toolchain.toml，所以装完工具链再单独加。
+      # 用 bash：Windows runner 默认是 pwsh，`[ -n ... ]` 那套过不去。
+      - name: 装工具链（版本见 rust-toolchain.toml）
+        shell: bash
+        run: |
+          rustup toolchain install --no-self-update
+          targets="${{ matrix.rust_targets }}"
+          if [ -n "$targets" ]; then
+            rustup target add $(echo "$targets" | tr ',' ' ')
+          fi
 
       - uses: Swatinem/rust-cache@v2.9.2
         with:

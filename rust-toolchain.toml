@@ -1,0 +1,43 @@
+# 工具链版本的唯一真相源：本机和 CI 都从这里取。
+#
+# # 为什么要钉住
+#
+# 原来 CI 写的是 `dtolnay/rust-toolchain@stable`，一个**浮动**版本。后果不是
+# 「偶尔要修一下」，而是**CI 会挂在跟改动毫无关系的提交上**：Rust 1.98.0 在
+# 2026-08-18 发布，带了新 lint `clippy::chunks_exact_to_as_chunks`，下一次 push
+# 的 Linux 和 macOS 两个 job 当场变红，而那次 push 根本没碰 `tray.rs`。
+#
+# 排查成本也高：CI 的 `stable` 悄悄前进了一格，本机还停在旧版本，于是「本机全绿、
+# CI 全红」，第一反应必然是往自己刚改的代码上找。
+#
+# 钉住之后，工具链变更成为一次**显式的提交**——升级挂了，就是那一个提交挂了。
+#
+# # 代价
+#
+# 新 lint 和新警告会晚一个升级周期才发现。这是想要的：让工具链升级变成一件
+# 单独安排的事，而不是随机砸进某次功能开发。
+#
+# # 什么时候升
+#
+# 大约每季度一次，或者需要某个新特性时。升级步骤：
+#   1. 改下面的 `channel`
+#   2. `cargo fmt --all --check` + `cargo clippy --workspace --exclude seltrans
+#      --all-targets -- -D warnings` + `cargo test --workspace --exclude seltrans`
+#      （在 mac 上 `--exclude seltrans` 不能省，见 CLAUDE.md）
+#   3. 新 lint 单独一个提交修，别和别的改动混在一起
+#
+# **只有 Linux 才编得到的代码（`tray.rs` 的 SNI 段、`selection/linux.rs`）在 mac 上
+# 验不了**，本机绿不代表 CI 绿——升级请推一次让 CI 跑完再合。
+#
+# # 谁会读这个文件
+#
+# 只有 rustup 的 shim 认它。用发行版包管理器装的 cargo（比如 Arch 的 `rust` 包、
+# AUR 构建环境）会直接忽略，用的还是系统那份——这条没法避免，也不影响正确性，
+# 代码本身不依赖任何 1.98 才有的特性。
+
+[toolchain]
+channel = "1.98.0"
+# CI 跑 clippy 和 fmt，本机也要，装到工具链里省得两边各写一份 components 列表
+components = ["clippy", "rustfmt"]
+# 只装编译和上面两个组件，不要 docs / rust-analyzer 之类，CI 上省下载
+profile = "minimal"
