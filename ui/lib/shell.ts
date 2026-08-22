@@ -70,6 +70,11 @@ export function createCtx(
       }
     },
     async refreshTheme() {
+      // 主题 CSS 由 Rust 按**磁盘上的**配置生成，而 save() 是防抖的（250ms）——
+      // 不先落盘，刷出来的就是上一轮的配置：切主题永远慢一拍，下拉框写着 Mocha、
+      // 界面却是上一次选的 Latte，配色和字体下拉全中招。实测踩过（用户连切多次
+      // 之后彻底对不上号）。所以刷新前先 flush，Rust 再读盘读到的才是刚改的值。
+      await ctx.flush();
       const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       themeEl.textContent = await api.themeCss(dark);
     },
