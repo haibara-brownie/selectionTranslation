@@ -6,9 +6,10 @@
 //! **像 JetBrains Maple Mono 这类拉丁字体自带汉字字形**，排在第一档就会把「中文字体」
 //! 那档整个架空 —— 用户明明选了思源宋，汉字却还是等宽的。
 //!
-//! 解法是给中文档加 `unicode-range` 并**排在最前**，让它只在汉字区生效，其余字符一律
-//! 轮空落到拉丁档。反过来（给拉丁档列白名单）也能work，但白名单列不全西里尔、希腊、
-//! 符号、emoji，漏一个就掉进后备档 —— 所以只限制中文档这一边。
+//! 解法是**两档各自钉死在自己的区间**：中文档的 `unicode-range` 取 [`CJK_RANGES`]
+//! 并排最前；拉丁档取同一张表的**补集**（从表派生，不必手列"非汉字"白名单——那种
+//! 白名单列不全西里尔、希腊、符号、emoji，漏一个就掉进后备档）。汉字从此不归拉丁档
+//! 管：中文档填了就归它，留空则落到后备档或通用族，即真正的系统默认。
 
 use std::fmt::Write as _;
 
@@ -73,25 +74,38 @@ fn range_list(ranges: &[(u32, u32)]) -> String {
 }
 
 fn font_face(family: &str, local: &str, ranges: &[(u32, u32)]) -> String {
+    // `local()` 按规范匹配的是「字体全名」或 PostScript 名，**不保证认家族名**。
+    // 实测分歧：WebKitGTK（Linux）认家族名；Chromium / WebView2（Windows）不认 ——
+    // local("Maple Mono SC NF") 解析失败，local("Maple Mono SC NF Regular")（全名）和
+    // local("MapleMonoSCNF-Regular")（PostScript 名）都能中。只写家族名的话，
+    // Windows 上两档 @font-face 全部落空，用户选的字体一个都不生效。
+    //
+    // 所以三种写法全列上：家族名、家族名 + " Regular"（常规体的全名惯例）、
+    // 去空格家族名 + "-Regular"（PostScript 名惯例）。src 列表按顺序试到能用为止，
+    // 多余的候选没有副作用。代价是粗细变体由浏览器从常规体合成，可以接受。
+    let name = clean(local);
+    let ps = name.replace(' ', "");
     format!(
         "@font-face {{\n  \
            font-family: \"{family}\";\n  \
-           src: local({});\n  \
+           src: local(\"{name}\"), local(\"{name} Regular\"), local(\"{ps}-Regular\");\n  \
            unicode-range: {};\n\
          }}\n\n",
-        quote(local),
         range_list(ranges)
     )
 }
 
-/// 字体名是用户填的，直接插进 CSS 会被引号截断 —— 剔掉引号和反斜杠再包引号。
-fn quote(name: &str) -> String {
-    let cleaned: String = name
-        .trim()
+/// 字体名是用户填的，直接插进 CSS 会被引号截断 —— 剔掉引号、反斜杠等危险字符。
+fn clean(name: &str) -> String {
+    name.trim()
         .chars()
         .filter(|c| !matches!(c, '"' | '\'' | '\\' | ';' | '{' | '}'))
-        .collect();
-    format!("\"{cleaned}\"")
+        .collect()
+}
+
+/// [`clean`] 之后再包引号，塞进 `font-family` 栈用。
+fn quote(name: &str) -> String {
+    format!("\"{}\"", clean(name))
 }
 
 /// 生成三档字体的 CSS：中文档的 `@font-face`（带区间限制）+ `--st-font` 字体栈。
@@ -109,24 +123,24 @@ pub fn font_css(latin: &str, cjk: &str, fallback: &str) -> String {
     }
 
     if !latin.is_empty() {
-        if cjk.is_empty() {
-            // 用户只配了拉丁字体，那就让它管全部字符 —— 它自带汉字是好事，
-            // 这时候去限制它反而会把汉字推给通用族，不是用户想要的。
-            stack.push(quote(latin));
-        } else {
-            // 配了中文字体，拉丁档就要反过来**只在汉字区以外**参与。
-            //
-            // 光限制中文档是不够的 —— `unicode-range` 只决定"哪个字体有资格参与"，
-            // 被选中的字体真缺字形时浏览器会继续往后回退，下一档正是拉丁字体，
-            // 于是自带汉字的等宽字体又赢了，绕一圈回到原来的 bug。
-            // 真实触发场景：用户把中文字体填成 "HarmonyOS Sans"（纯拉丁族，
-            // 带汉字的是 "HarmonyOS Sans SC"）。
-            //
-            // 两档都挡住之后，汉字最终落到末尾的通用族，由系统字体配置兜底 ——
-            // 不见得漂亮，但至少是真的汉字，不是豆腐块。
-            let _ = write!(css, "{}", font_face(LATIN_FACE, latin, &non_cjk_ranges()));
-            stack.push(format!("\"{LATIN_FACE}\""));
-        }
+        // 拉丁档**一律**只在汉字区以外参与，中文档填没填都一样。
+        //
+        // 光限制中文档是不够的 —— `unicode-range` 只决定"哪个字体有资格参与"，
+        // 被选中的字体真缺字形时浏览器会继续往后回退，下一档正是拉丁字体，
+        // 于是自带汉字的等宽字体又赢了，绕一圈回到原来的 bug。
+        // 真实触发场景：用户把中文字体填成 "HarmonyOS Sans"（纯拉丁族，
+        // 带汉字的是 "HarmonyOS Sans SC"）。
+        //
+        // 中文档留空时**也要挡**。早先这里不挡、让拉丁字体管全部字符，理由是
+        // 「用户没表达过汉字要用别的字体的意思」—— 真实用户推翻了这个预设：
+        // 设置页里「中文字体：系统默认」是一个明确的选项，选它就是在说「汉字用
+        // 系统默认」；拉丁档的副标题也承诺过「自带汉字会被挡在汉字之外」。
+        // 用户选了 Maple 之后连汉字都变等宽，报的就是这个。见 ADR 0001 修订记录。
+        //
+        // 两处都挡住之后，汉字落到后备档或末尾的通用族，由系统字体配置兜底 ——
+        // 不见得漂亮，但至少是「系统默认」说的那个意思。
+        let _ = write!(css, "{}", font_face(LATIN_FACE, latin, &non_cjk_ranges()));
+        stack.push(format!("\"{LATIN_FACE}\""));
     }
 
     if !fallback.is_empty() {

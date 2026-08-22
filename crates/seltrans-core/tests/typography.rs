@@ -154,16 +154,40 @@ fn stack_of(css: &str) -> String {
     body[..body.find(';').expect("--st-font 没有以分号结束")].to_string()
 }
 
-/// 用户只配了拉丁字体时，就让它管全部字符。
+/// 中文字体留空（＝系统默认）时，拉丁档**照样**只管非汉字区。
 ///
-/// 它自带汉字这时候是好事 —— 用户没表达过"汉字要用别的字体"的意思，
-/// 这时候去限制它反而会把汉字推给通用族，等于替用户做了没被授权的决定。
-/// 顺带：空的 `local()` 会让整条 @font-face 失效，所以也不能发。
+/// 回归测试：早先这条路不加限制、让拉丁字体管全部字符，理由是「用户没表达过
+/// 汉字要用别的字体的意思」。真实用户推翻了它 —— 设置页里「中文字体：系统默认」
+/// 是一个明确的选项，选它就是在说「汉字用系统默认」；用户把拉丁字体设成
+/// Maple（自带汉字）之后，整个界面连汉字都变成了等宽。拉丁档的副标题承诺的是
+/// 「自带汉字也会被挡在汉字之外」，实现必须无条件兑现。见 ADR 0001 修订记录。
 #[test]
-fn 没设中文字体时拉丁档不受限制() {
+fn 没设中文字体时拉丁档也只管非汉字区() {
     let css = font_css("JetBrains Maple Mono", "", "");
-    assert!(!css.contains("@font-face"), "只有一档时不该有 @font-face");
-    assert!(stack_of(&css).contains("\"JetBrains Maple Mono\""));
+
+    let latin = face_ranges(&css, "st-latin").expect("没有生成拉丁档的 @font-face");
+    for c in ['汉', '字', '，', 'あ', '한', 'Ａ'] {
+        assert!(
+            !in_ranges(&latin, c),
+            "{c} 落在拉丁档区间里，自带汉字的拉丁字体会把「系统默认」架空"
+        );
+    }
+    for c in ['A', 'z', '0', ',', 'Я', 'Ω', '€'] {
+        assert!(!is_cjk(c) && in_ranges(&latin, c), "{c} 应由拉丁档负责");
+    }
+
+    // 汉字这时不该有任何具名字体认领，落到通用族由系统兜底
+    let stack = stack_of(&css);
+    assert!(stack.contains("\"st-latin\""));
+    assert!(!stack.contains("\"JetBrains Maple Mono\""), "真字体名只该藏在 local() 里");
+    assert!(stack.contains("system-ui"));
+
+    // local() 必须给足三种写法：家族名（WebKitGTK 认）、全名和 PostScript 名
+    // （Chromium / WebView2 只认后两种）。少列一种，某个平台上用户选的字体就
+    // 整个不生效 —— Windows 真机踩过（家族名写法在 WebView2 里解析失败）。
+    assert!(css.contains("local(\"JetBrains Maple Mono\")"));
+    assert!(css.contains("local(\"JetBrains Maple Mono Regular\")"));
+    assert!(css.contains("local(\"JetBrainsMapleMono-Regular\")"));
 }
 
 #[test]
