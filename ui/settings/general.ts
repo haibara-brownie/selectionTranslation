@@ -222,7 +222,7 @@ function buildAppearance(ctx: Ctx, themes: [string, string][], fonts: string[]):
   addRow(g, cjkRow);
   addRow(
     g,
-    searchComboRow("后备字体", "前两档都没有的字形，比如 emoji、西里尔字母", families, ctx.config.fontFallback, (v) => {
+    searchComboRow("后备字体", "前两种字体都缺的字形（比如 emoji、西里尔字母）用它显示", families, ctx.config.fontFallback, (v) => {
       ctx.config.fontFallback = v;
       ctx.save();
       refresh();
@@ -238,7 +238,7 @@ function buildAppearance(ctx: Ctx, themes: [string, string][], fonts: string[]):
     const covers = await attempt(ctx, "检查字体字形", () => api.fontCoversCjk(family), false);
     setSub(
       latinRow,
-      covers ? `${LATIN_BASE} · ${family} 自带汉字，已经帮你把它挡在汉字之外了，汉字仍由「中文字体」那一档决定` : LATIN_BASE,
+      covers ? `${LATIN_BASE} · 「${family}」自带汉字字形；汉字不受它影响，仍按「中文字体」的设置显示` : LATIN_BASE,
     );
   }
 

@@ -226,7 +226,7 @@ pub fn grab(mode: &str) -> Result<String, String> {
     let result = match mode {
         "primary" => read_primary().ok_or_else(|| {
             "主选区是空的。可能是没有选中文本，或者这个应用不支持主选区\
-             （可在设置里把取词方式改成「自动」以启用 Ctrl+C 兜底）"
+             （可在设置里把取词方式改成「自动」，读不到时自动改用模拟 Ctrl+C）"
                 .to_string()
         }),
         "clipboard" => copy_via_ydotool(),
@@ -289,9 +289,9 @@ pub fn deps_report() -> Vec<(String, bool, String)> {
         "ydotool".into(),
         yd && yd_running,
         match (yd, yd_running) {
-            (false, _) => "缺失，Ctrl+C 兜底取词不可用：pac ydotool".into(),
+            (false, _) => "缺失，模拟 Ctrl+C 取词不可用：pac ydotool".into(),
             (true, false) => "已安装但服务未运行：systemctl --user enable --now ydotool".into(),
-            (true, true) => "已安装且服务在运行，Ctrl+C 兜底取词可用".into(),
+            (true, true) => "已安装且服务在运行，模拟 Ctrl+C 取词可用".into(),
         },
     ));
 

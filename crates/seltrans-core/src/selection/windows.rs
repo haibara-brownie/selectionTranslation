@@ -493,8 +493,10 @@ fn copy_via_sendinput() -> Result<String, String> {
             Err(msg)
         }
         None => {
-            let msg = "Ctrl+Insert 和 Ctrl+C 都没让剪贴板发生变化。可能是没有选中文本，\
-                       也可能是目标程序以管理员权限运行、UIPI 挡住了我们注入的按键"
+            // 每一发的失败细节（"Ctrl+Insert 没让剪贴板发生变化"）已各自记过日志，
+            // 这条是给用户看的，说人话
+            let msg = "没有读到选中的文本。可能当前没有选中文字；如果目标程序是以管理员\
+                       身份运行的，Windows 会阻止取词，需要让 seltrans 也以管理员身份运行"
                 .to_string();
             logging::warn(&msg);
             Err(msg)
@@ -542,8 +544,8 @@ fn grab_on_own_thread(mode: &str) -> Result<String, String> {
     let result = match mode {
         "clipboard" => copy_via_sendinput(),
         "primary" => via_uia().ok_or_else(|| {
-            "UI Automation 没读到选中文本。可在设置里把取词方式改成「自动」以启用模拟复制兜底 \
-             —— 老式 Win32 控件、部分终端和 PDF 阅读器只能靠那条路"
+            "没有从当前窗口读到选中文本。可在设置里把取词方式改成「自动」，读不到时会自动\
+             改用模拟复制 —— 老式程序、部分终端和 PDF 阅读器只支持那种方式"
                 .to_string()
         }),
         _ => match via_uia() {
@@ -570,17 +572,16 @@ pub fn deps_report() -> Vec<(String, bool, String)> {
     out.push((
         "UI Automation 取词".into(),
         true,
-        "系统自带，首选路线：直接从控件的可访问性树读选中文本，不碰剪贴板、不模拟按键。\
-         现代应用（Chrome / Edge / VS Code / Office）基本都实现了；浏览器和 Electron 里选区\
-         常挂在祖先的 Document 元素上，我们会沿祖先链往上找"
+        "系统自带，首选方式：直接读取控件里选中的文本，不碰剪贴板、不模拟按键。\
+         现代应用（Chrome / Edge / VS Code / Office）基本都支持"
             .into(),
     ));
 
     out.push((
         "输入模拟（SendInput）".into(),
         true,
-        "Windows 自带，无需安装 ydotool 之类的外部依赖。UIA 读不到时的兜底：\
-         先发 Ctrl+Insert（传统控制台里它才是复制，Ctrl+C 是中断信号），不行再发 Ctrl+C"
+        "Windows 自带，无需安装外部依赖。UI Automation 读不到时改用模拟复制：\
+         先发 Ctrl+Insert（控制台里它才是复制键），不行再发 Ctrl+C"
             .into(),
     ));
 

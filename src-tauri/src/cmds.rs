@@ -39,8 +39,12 @@ pub fn load_state(system_dark: bool) -> UiState {
 }
 
 /// 抓当前选中的文本。取不到时把 core 给的排查建议原样带上去。
+///
+/// **必须是 `async`。** 同步命令跑在主线程的 IPC 回调里，而取词的兜底路径要模拟按键、
+/// 轮询剪贴板，最长要等两秒上下 —— 这段时间整个事件循环停摆，所有窗口一起冻住。
+/// async 把它挪到工作线程（grab 内部另有自己的一次性线程管 COM，两回事，都要）。
 #[tauri::command]
-pub fn grab_selection() -> Result<String, String> {
+pub async fn grab_selection() -> Result<String, String> {
     let cfg = Config::load();
     selection::grab(&cfg.selection_mode)
 }
