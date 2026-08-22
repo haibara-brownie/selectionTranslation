@@ -197,6 +197,16 @@ fn main() {
     // 托盘模式只常驻、不开窗口，等用户点图标或按快捷键
     let tray_mode = matches!(cmd.as_str(), "tray" | "daemon");
 
+    // 裸启动（argv 里没有子命令，即双击 exe / 开始菜单快捷方式）也要常驻。
+    //
+    // 「关窗即退」的一次性语义是给**显式**子命令留的：在终端敲 `seltrans popup` 的人
+    // 要的就是用完就走（Linux 上合成器按快捷键 spawn 的也是这条路），不能给他留一个
+    // 看不见的后台进程。但 Windows / mac 用户的主入口是双击图标，双击的 argv 恰好
+    // 没有子命令、落进默认的 popup —— 弹窗一关整个进程就没了，托盘图标和全局快捷键
+    // 全部跟着消失。Windows 真机踩过：用户双击启动、点 ✕ 关窗，然后问「那我怎么用？」。
+    // 按「用户有没有亲手写子命令」区分，两边的预期就都对了。
+    let resident = tray_mode || args.get(1).is_none();
+
     // 取词**不在这里做**，交给 `windows::dispatch`（它在开窗之前取，时序照样是对的）。
     //
     // 早先这里会先取一次词再进 Tauri，结果是**一次触发取两遍**：本进程取一次，
@@ -234,7 +244,7 @@ fn main() {
     hotkey::plugin(builder)
         .manage(Launch(std::sync::Mutex::new(req)))
         // 托盘模式常驻：关窗口只藏不销毁，下次按快捷键立刻就出来
-        .manage(windows::Resident(tray_mode))
+        .manage(windows::Resident(resident))
         .invoke_handler(tauri::generate_handler![
             launch_args,
             open_settings,
@@ -321,7 +331,7 @@ fn main() {
             // 托盘菜单的「退出」走的就是它 —— 同样以 `ExitRequested` 的形式经过这里，
             // 但带着 `code: Some(0)`。不区分就把托盘的「退出」也拦死了：用户点了
             // 毫无反应，只能开任务管理器杀进程。实测踩过。
-            if tray_mode && let tauri::RunEvent::ExitRequested { api, code: None, .. } = event {
+            if resident && let tauri::RunEvent::ExitRequested { api, code: None, .. } = event {
                 api.prevent_exit();
             }
         });
