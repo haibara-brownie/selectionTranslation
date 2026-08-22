@@ -36,12 +36,31 @@ fn launch_args(state: tauri::State<'_, Launch>) -> TranslateRequest {
     state.0.lock().map(|g| g.clone()).unwrap_or_default()
 }
 
-/// 打开设置窗口。托盘菜单和弹窗里的齿轮按钮都走这个。
+/// 打开设置窗口。弹窗里的齿轮按钮和新手引导走这个（托盘菜单在 tray.rs 里自己分发）。
+///
+/// **必须是 `async`，且经 `run_on_main_thread` 投递，两步缺一不可。** Windows 真机
+/// 踩了整整一轮才踩明白：
+///
+/// 同步命令在 Tauri 里本来就跑在主线程上，但执行点在 **WebView2 的 IPC 回调内部**。
+/// 在一个 webview 的事件回调里再建第二个 WebView2，它的异步初始化推进不下去，
+/// webview 建出来却**永远停在 about:blank** —— 弹窗点齿轮，设置窗必现白屏
+/// （CDP 里能看到那个页面目标一直是 about:blank）。
+///
+/// 光套一层 `run_on_main_thread` 治不了：它发现自己已经在主线程时是**原地立即执行**，
+/// 还是在同一个回调栈里，白屏照旧（试过）。改成 `async` 后命令挪到工作线程，
+/// 那里的 `run_on_main_thread` 只能走消息投递，闭包在**干净的主循环迭代**里执行，
+/// 跟托盘 / 快捷键那两条正常路（tray.rs / hotkey.rs）殊途同归。
+///
+/// 投递出去之后开窗结果拿不回来（fire-and-forget），失败记日志。
 #[tauri::command]
-fn open_settings(app: tauri::AppHandle, page: Option<String>) -> Result<(), String> {
-    windows::open_settings(&app, page.as_deref())
-        .map(|_| ())
-        .map_err(|e| format!("打不开设置窗口：{e}"))
+async fn open_settings(app: tauri::AppHandle, page: Option<String>) -> Result<(), String> {
+    let h = app.clone();
+    app.run_on_main_thread(move || {
+        if let Err(e) = windows::open_settings(&h, page.as_deref()) {
+            logging::error(&format!("打不开设置窗口：{e}"));
+        }
+    })
+    .map_err(|e| format!("打不开设置窗口：{e}"))
 }
 
 /// 从参数里取 `--text` 的值
