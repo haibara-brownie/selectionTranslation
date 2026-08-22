@@ -113,8 +113,11 @@ fn selection_of(el: &IUIAutomationElement) -> Option<String> {
 ///
 /// 拿不到就返回 `None`，由调用方决定要不要退到模拟复制。
 fn via_uia() -> Option<String> {
-    // COM 初始化是按线程算的。取词可能从任意线程调，所以每次都初始化一遍；
-    // 这个线程已经初始化过（哪怕线程模型不同）会返回失败码，忽略即可 —— 后续调用照常。
+    // COM 初始化是按线程算的，所以每次都初始化一遍；这个线程已经初始化过（哪怕线程
+    // 模型不同）会返回失败码，忽略即可 —— 后续调用照常。
+    //
+    // 这一行是 `grab` 把取词整体丢进一次性线程的原因：MTA 会把所在线程占成这个模型，
+    // 在主线程上跑等于不让 tao 之后 OleInitialize（要 STA），建窗会 panic。
     // SAFETY: 参数无内存所有权含义，重复调用是被明确允许的。
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -516,6 +519,24 @@ fn copy_via_sendinput() -> Result<String, String> {
 /// - `"clipboard"`：直接上模拟复制。
 /// - 其他（含 `"auto"`）：先 UIA，不行再模拟复制。
 pub fn grab(mode: &str) -> Result<String, String> {
+    // 取词必须丢进**一次性线程**，不能占用调用方的线程 —— via_uia 会把所在线程的
+    // COM 公寓初始化成 MTA（CoInitializeEx 按线程生效，先到先得）。冷启动
+    // `seltrans popup` 那条路上，取词跑在主线程、还赶在建窗之前；随后 tao 建窗口要
+    // OleInitialize（要求 STA），主线程已经是 MTA 就得到 RPC_E_CHANGED_MODE，tao 对此
+    // 直接 panic —— GUI 子系统下无声无息，表现为「双击 exe 毫无反应」。实测踩过。
+    //
+    // 常驻托盘模式一直没出事纯属侥幸：快捷键回调跑在插件自己的线程上，弄脏的是那个
+    // 线程。线程用完即弃，COM 公寓随线程一起销毁，调用方的线程永远保持干净。
+    let mode = mode.to_string();
+    std::thread::Builder::new()
+        .name("seltrans-grab".into())
+        .spawn(move || grab_on_own_thread(&mode))
+        .map_err(|e| format!("起不了取词线程：{e}"))?
+        .join()
+        .unwrap_or_else(|_| Err("取词线程 panic 了，详情见日志".to_string()))
+}
+
+fn grab_on_own_thread(mode: &str) -> Result<String, String> {
     logging::info(&format!("开始取词，方式={mode}"));
 
     let result = match mode {

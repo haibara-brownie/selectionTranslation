@@ -2,7 +2,7 @@
 members = ["crates/seltrans-core", "src-tauri"]
 
 [workspace.package]
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 
 # 核心 crate 和界面层共用同一批依赖版本，免得两边漂移
