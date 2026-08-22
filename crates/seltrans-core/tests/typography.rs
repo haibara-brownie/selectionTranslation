@@ -179,7 +179,10 @@ fn 没设中文字体时拉丁档也只管非汉字区() {
     // 汉字这时不该有任何具名字体认领，落到通用族由系统兜底
     let stack = stack_of(&css);
     assert!(stack.contains("\"st-latin\""));
-    assert!(!stack.contains("\"JetBrains Maple Mono\""), "真字体名只该藏在 local() 里");
+    assert!(
+        !stack.contains("\"JetBrains Maple Mono\""),
+        "真字体名只该藏在 local() 里"
+    );
     assert!(stack.contains("system-ui"));
 
     // local() 必须给足三种写法：家族名（WebKitGTK 认）、全名和 PostScript 名

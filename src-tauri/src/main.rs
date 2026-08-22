@@ -331,7 +331,11 @@ fn main() {
             // 托盘菜单的「退出」走的就是它 —— 同样以 `ExitRequested` 的形式经过这里，
             // 但带着 `code: Some(0)`。不区分就把托盘的「退出」也拦死了：用户点了
             // 毫无反应，只能开任务管理器杀进程。实测踩过。
-            if resident && let tauri::RunEvent::ExitRequested { api, code: None, .. } = event {
+            if resident
+                && let tauri::RunEvent::ExitRequested {
+                    api, code: None, ..
+                } = event
+            {
                 api.prevent_exit();
             }
         });
